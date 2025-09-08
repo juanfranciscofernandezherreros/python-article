@@ -22,7 +22,8 @@ USERS_COLL      = os.getenv("USERS_COLL")
 ARTICLES_COLL   = os.getenv("ARTICLES_COLL")
 SITE            = os.getenv("SITE") or ""
 OPENAIAPIKEY    = os.getenv("OPENAIAPIKEY")
-AUTHOR_USERNAME = os.getenv("AUTHOR_USERNAME") or "adminUser"  # fallback
+AUTHOR_USERNAME = os.getenv("AUTHOR_USERNAME") or "adminUser"
+OPENAI_MODEL    = os.getenv("OPENAI_MODEL", "gpt-5")
 
 # ============ HELPERS ============
 def str_id(x):
@@ -156,7 +157,7 @@ Reglas:
 
 def generate_article_with_ai(client_ai: OpenAI, parent_name: str, subcat_name: str, tag_text: str, avoid_titles=None):
     resp = client_ai.responses.create(
-        model="gpt-5",
+        model=OPENAI_MODEL,
         input=build_generation_prompt(parent_name, subcat_name, tag_text, avoid_titles=avoid_titles)
     )
     raw = resp.output_text.strip()
@@ -230,7 +231,30 @@ def send_notification_email(subject: str, html_body: str, text_body: str = None)
         print(f"❌ Error enviando el correo: {e}", file=sys.stderr)
         return False
 
-# ============ NUEVO: utilidades para 'mínimo 1 artículo por tag' ============
+# ============ NUEVO: ventana "semana actual" (Europa/Madrid) ============
+def current_week_window_utc_for_madrid(start_weekday: int = 1):
+    """
+    Devuelve (inicio_utc, fin_utc) de la semana actual en Europe/Madrid.
+    start_weekday: 1=lunes ... 7=domingo (por defecto lunes a domingo).
+    """
+    tz_madrid = ZoneInfo("Europe/Madrid")
+    today = datetime.now(tz_madrid).date()
+    weekday = today.isoweekday()  # 1-7
+    delta_days = (weekday - start_weekday) % 7
+    start_local = datetime.combine(today - timedelta(days=delta_days), time(0, 0), tzinfo=tz_madrid)
+    end_local = start_local + timedelta(days=7)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+# (Se conserva por si más adelante quisieras volver a la lógica diaria)
+def today_window_utc_for_madrid():
+    """Devuelve (inicio_utc, fin_utc) del día actual en Europa/Madrid."""
+    tz_madrid = ZoneInfo("Europe/Madrid")
+    today_madrid = datetime.now(tz_madrid).date()
+    start_madrid = datetime.combine(today_madrid, time(0, 0), tzinfo=tz_madrid)
+    end_madrid = start_madrid + timedelta(days=1)
+    return start_madrid.astimezone(timezone.utc), end_madrid.astimezone(timezone.utc)
+
+# ============ Auxiliares usados en main() ============
 def build_hierarchy(categories):
     by_id = {str_id(c.get("_id")): c for c in categories}
     by_parent = {}
@@ -245,29 +269,24 @@ def guess_parent_and_subcat_for_tag(tag, categories, by_id, by_parent):
     - Si referencia una categoría padre (sin parent), intentamos elegir una subcategoría hija.
     - Si no encontramos nada, caemos a una pareja aleatoria válida.
     """
-    # 1) candidatos por id/nombre
     cand_ids = [tag.get("categoryId"), tag.get("category_id"), tag.get("categoryRef")]
     cand_names = [tag.get("categoryName"), tag.get("category")]
     arr_keys = ("categories", "categoryIds", "category_ids")
 
-    # normaliza ids/nombres
     ids_norm = [str_id(x) for x in cand_ids if x]
     names_norm = [str(x).strip() for x in cand_names if x]
 
-    # intenta por id directo
     for cid in ids_norm:
         c = by_id.get(cid)
         if c:
             parent_id = str_id(c.get("parent")) if c.get("parent") else None
-            if parent_id:  # c es subcategoría
+            if parent_id:
                 return by_id.get(parent_id), c
-            else:  # c es padre; elige una hija si existe
+            else:
                 children = by_parent.get(str_id(c.get("_id")), [])
                 if children:
                     return c, random.choice(children)
-            # sin hijas: continuar
 
-    # intenta por nombre
     for name in names_norm:
         for c in categories:
             if str(c.get("name") or c.get("title") or "").strip() == name:
@@ -279,7 +298,6 @@ def guess_parent_and_subcat_for_tag(tag, categories, by_id, by_parent):
                     if children:
                         return c, random.choice(children)
 
-    # intenta arrays de categorías
     for key in arr_keys:
         if key in tag:
             for raw in as_list(tag.get(key)):
@@ -294,7 +312,6 @@ def guess_parent_and_subcat_for_tag(tag, categories, by_id, by_parent):
                         if children:
                             return c, random.choice(children)
 
-    # Fallback: pareja aleatoria válida (padre con al menos una hija)
     parent_candidates = [c for c in categories if str_id(c.get("_id")) in by_parent]
     if not parent_candidates:
         return None, None
@@ -397,7 +414,6 @@ def ensure_article_for_tag(db, client_ai, tag, parent, subcat, recent_titles, au
     try:
         send_notification_email(subject, html_body, text_body=f"Se ha publicado: {title} (slug: {slug})")
     except Exception:
-        # no interrumpe el flujo si falla el email
         pass
 
     # actualiza recientes para ayudar al siguiente tag
@@ -405,15 +421,6 @@ def ensure_article_for_tag(db, client_ai, tag, parent, subcat, recent_titles, au
     if len(recent_titles) > 50:
         del recent_titles[50:]
     return True
-
-# ============ NUEVO: ventana "hoy" (Europa/Madrid) ============
-def today_window_utc_for_madrid():
-    """Devuelve (inicio_utc, fin_utc) del día actual en Europa/Madrid."""
-    tz_madrid = ZoneInfo("Europe/Madrid")
-    today_madrid = datetime.now(tz_madrid).date()
-    start_madrid = datetime.combine(today_madrid, time(0, 0), tzinfo=tz_madrid)
-    end_madrid = start_madrid + timedelta(days=1)
-    return start_madrid.astimezone(timezone.utc), end_madrid.astimezone(timezone.utc)
 
 # ============ MAIN ============
 def main():
@@ -426,6 +433,7 @@ def main():
     if not USERS_COLL:    missing.append("USERS_COLL")
     if not CATEGORY_COLL: missing.append("CATEGORY_COLL")
     if not TAGS_COLL:     missing.append("TAGS_COLL")
+    
     if missing:
         print("❌ Faltan variables de entorno: " + ", ".join(missing), file=sys.stderr)
         sys.exit(1)
@@ -438,18 +446,71 @@ def main():
         print(f"❌ Error de conexión a MongoDB: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # ===== Limitar a 1 artículo por día (Europa/Madrid) =====
+    # ===== Limitar a 1 artículo por semana (Europa/Madrid, lunes-domingo) =====
     try:
-        start_utc, end_utc = today_window_utc_for_madrid()
-        already_today = db[ARTICLES_COLL].count_documents({
+        start_utc, end_utc = current_week_window_utc_for_madrid(start_weekday=1)  # 1 = lunes
+        already_this_week = db[ARTICLES_COLL].count_documents({
             "publishDate": {"$gte": start_utc, "$lt": end_utc},
             "status": "published"
         })
-        if already_today >= 1:
-            print("🟨 Ya hay un artículo publicado hoy. Se cancela la ejecución.")
-            sys.exit(0)   # cortar ejecución si ya hay uno hoy
+
+        if already_this_week >= 1:
+            # Busca el último artículo publicado esta semana para incluirlo en el email
+            last_doc = db[ARTICLES_COLL].find(
+                {"publishDate": {"$gte": start_utc, "$lt": end_utc}, "status": "published"},
+                {"title": 1, "slug": 1, "publishDate": 1}
+            ).sort("publishDate", -1).limit(1)
+            last_article = next(iter(last_doc), None)
+
+            # Construye y envía el email
+            if last_article:
+                last_title = last_article.get("title", "(sin título)")
+                last_slug  = last_article.get("slug", "")
+                last_date  = last_article.get("publishDate")
+                link = f"{SITE}/post/{last_slug}" if SITE and last_slug else last_slug
+
+                subject = "Aviso: ya hay un artículo publicado esta semana"
+                html_body = f"""
+                <p>Hola,</p>
+                <p>La publicación automática no ha generado un nuevo artículo porque
+                ya existe al menos uno publicado esta semana (ventana lunes-domingo Europa/Madrid).</p>
+                <ul>
+                  <li><b>Título:</b> {last_title}</li>
+                  <li><b>Slug:</b> {link}</li>
+                  <li><b>Fecha:</b> {(last_date.isoformat() if last_date else 'N/D')}</li>
+                </ul>
+                <p>Si deseas forzar una nueva publicación, ajusta la lógica del límite semanal.</p>
+                """
+                try:
+                    send_notification_email(
+                        subject,
+                        html_body,
+                        text_body=f"Ya hay un artículo esta semana: {last_title} (slug: {link})"
+                    )
+                except Exception:
+                    pass
+            else:
+                subject = "Aviso: ya hay un artículo publicado esta semana"
+                html_body = """
+                <p>Hola,</p>
+                <p>La publicación automática no ha generado un nuevo artículo porque
+                ya existe al menos uno publicado esta semana (ventana lunes-domingo Europa/Madrid).</p>
+                <p>No se pudo recuperar el detalle del último artículo.</p>
+                """
+                try:
+                    send_notification_email(
+                        subject,
+                        html_body,
+                        text_body="La publicación automática se canceló: ya existe un artículo esta semana."
+                    )
+                except Exception:
+                    pass
+
+            print("🟨 Ya hay un artículo publicado esta semana. Se cancela la ejecución.")
+            sys.exit(0)   # cortar ejecución si ya hay uno esta semana
+
     except Exception as e:
-        print(f"❌ Error comprobando artículos de hoy: {e}", file=sys.stderr)
+        print(f"❌ Error comprobando artículos de la semana: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Carga básica necesaria para continuar
@@ -493,14 +554,13 @@ def main():
         parent, subcat = guess_parent_and_subcat_for_tag(tag, categories, by_id, by_parent)
         if parent is None or subcat is None:
             print("⚠️ No se pudo deducir (padre, subcategoría) de forma fiable; se usará fallback aleatorio.")
-            # (el propio guess ya hace fallbacks)
 
         try:
             created = ensure_article_for_tag(db, client_ai, tag, parent, subcat, recent_titles, author_id)
             if created:
                 created_count += 1
-                print("\n🟦 Límite diario alcanzado (1). Proceso detenido.")
-                break   # solo 1 artículo por día
+                print("\n🟦 Límite semanal alcanzado (1). Proceso detenido.")
+                break   # solo 1 artículo por semana
         except Exception as e:
             print(f"❌ Error generando/insertando para tag '{tag_name(tag)}': {e}", file=sys.stderr)
             continue
