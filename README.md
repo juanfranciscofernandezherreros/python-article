@@ -1,6 +1,101 @@
-# Publicación automática semanal con IA — README
+# Publicación automática semanal con IA
 
-Este documento explica, de forma no técnica, **qué hace el script**, **cómo funciona paso a paso** y **qué necesita para hacerlo bien**.
+---
+
+## 🚀 Guía rápida de ejecución
+
+### Requisitos previos
+
+| Herramienta | Versión mínima | Para qué |
+|---|---|---|
+| **Python** | 3.10+ | Ejecutar el script |
+| **Docker** y **Docker Compose** | Docker 20+ | Levantar MongoDB |
+| **Clave de OpenAI** | — | Generar artículos con IA |
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/juanfranciscofernandezherreros/python-openai.git
+cd python-openai
+```
+
+### 2. Levantar MongoDB con Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Esto arranca un contenedor **MongoDB 7** en el puerto `27017` con:
+- Usuario: `admin`
+- Contraseña: `admin1234`
+- Base de datos inicial: `blogdb`
+- Volumen persistente `mongo_data` para no perder datos al reiniciar.
+
+Comprueba que está sano:
+
+```bash
+docker compose ps
+```
+
+Deberías ver el servicio `mongodb-articles` con estado **healthy**.
+
+### 3. Configurar las variables de entorno
+
+Copia el fichero de ejemplo y edita los valores:
+
+```bash
+cp .env.example .env
+```
+
+Abre `.env` con tu editor y rellena, como mínimo:
+
+| Variable | Qué poner |
+|---|---|
+| `OPENAIAPIKEY` | Tu clave de API de OpenAI (`sk-...`) |
+| `SMTP_*` / `FROM_EMAIL` / `NOTIFY_EMAIL` | Datos de tu servidor de correo (SMTP) |
+| `AUTHOR_USERNAME` | Nombre del usuario autor en tu base de datos |
+| `SITE` | URL de tu web (p. ej. `https://tusitio.com`) |
+
+> **Nota:** Si usas el `docker-compose.yml` incluido, la variable `MONGODB_URI` ya viene configurada correctamente y no necesitas cambiarla.
+
+### 4. Instalar dependencias de Python
+
+```bash
+pip install -r requirements.txt
+```
+
+### 5. Ejecutar el script
+
+```bash
+python generateArticle.py
+```
+
+El script:
+1. Comprueba la configuración.
+2. Se conecta a MongoDB.
+3. Busca un tag sin artículo publicado.
+4. Genera el artículo con OpenAI.
+5. Lo guarda en la base de datos y te notifica por correo.
+
+### 6. Ejecutar los tests
+
+```bash
+pip install pytest
+python -m pytest test_generateArticle.py -v
+```
+
+### Comandos útiles de Docker Compose
+
+```bash
+# Ver logs de MongoDB
+docker compose logs -f mongodb
+
+# Parar el contenedor
+docker compose down
+
+# Parar y borrar el volumen de datos
+docker compose down -v
+```
 
 ---
 
