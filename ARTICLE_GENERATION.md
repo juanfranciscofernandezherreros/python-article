@@ -1,6 +1,6 @@
 # Cómo funciona `generateArticle.py`
 
-Este documento explica en detalle la arquitectura interna, el flujo de datos y cada componente clave del script de publicación automática de artículos.
+Este documento explica en detalle la arquitectura interna, el flujo de datos y cada componente clave del script de publicación automática de artículos **optimizado para SEO**.
 
 ---
 
@@ -18,18 +18,26 @@ Este documento explica en detalle la arquitectura interna, el flujo de datos y c
 10. [Sistema de notificaciones por correo](#10-sistema-de-notificaciones-por-correo)
 11. [Documento insertado en MongoDB](#11-documento-insertado-en-mongodb)
 12. [Diagrama de flujo](#12-diagrama-de-flujo)
+13. [Optimización SEO completa](#13-optimización-seo-completa)
 
 ---
 
 ## 1. Visión general
 
-`generateArticle.py` es un script Python que automatiza la **generación y publicación semanal de artículos técnicos** en una base de datos MongoDB. El flujo principal es:
+`generateArticle.py` es un script Python que automatiza la **generación y publicación semanal de artículos técnicos optimizados para SEO** en una base de datos MongoDB. El flujo principal es:
 
 ```
-Configuración → MongoDB → Límite semanal → Elegir tema → IA (OpenAI) → Guardar artículo → Email
+Configuración → MongoDB → Límite semanal → Elegir tema → IA (OpenAI) → Metadatos SEO → Guardar artículo → Email
 ```
 
 Cada ejecución publica **como máximo un artículo** (por defecto). El script está diseñado para ser ejecutado de forma programada (cron semanal, CI/CD, etc.) y notifica todos los eventos importantes por correo electrónico.
+
+Cada artículo generado incluye:
+- **Contenido HTML semántico** optimizado para SEO on-page (h1 > h2 > h3, FAQ, CTA)
+- **Metadatos SEO**: `metaTitle` (≤ 60 chars), `metaDescription` (≤ 160 chars), `keywords` (5-7)
+- **URL canónica** (`canonicalUrl`) para evitar contenido duplicado
+- **Datos estructurados JSON-LD** (Schema.org `TechArticle`) para rich snippets
+- **Metadatos Open Graph** (`ogTitle`, `ogDescription`, `ogType`) para redes sociales
 
 ---
 
@@ -104,12 +112,14 @@ El script está organizado en capas bien separadas:
 | **Helpers genéricos** | `str_id`, `as_list`, `tag_name`, `slugify`, `html_escape` | Utilidades de conversión y normalización |
 | **Similitud** | `normalize_for_similarity`, `similar_ratio`, `is_too_similar` | Detectar duplicados de título |
 | **Notificaciones** | `send_notification_email`, `notify` | Email SMTP y logging unificado |
-| **MongoDB (batch)** | `preload_published_tag_ids`, `preload_published_category_ids` | Evitar consultas N+1 |
+| **MongoDB (batch)** | `preload_published_tag_ids`, `preload_published_category_ids`, `preload_published_ids` | Evitar consultas N+1 |
 | **Jerarquía** | `build_hierarchy`, `index_tags`, `find_subcats_with_tags` | Árbol categorías/subcategorías/tags |
 | **Selección** | `pick_fresh_target_strict`, `guess_parent_and_subcat_for_tag` | Elegir el tema con regla estricta |
-| **IA** | `build_generation_prompt`, `generate_article_with_ai`, `_extract_json_block`, `_safe_json_loads` | Construir prompt y parsear respuesta |
-| **Publicación** | `ensure_article_for_tag` | Orquestar generación + deduplicación + inserción |
+| **IA** | `build_generation_prompt`, `build_title_prompt`, `generate_article_with_ai`, `generate_title_with_ai` | Construir prompt SEO y parsear respuesta |
+| **SEO** | `build_canonical_url`, `build_json_ld_structured_data` | URL canónica, datos estructurados JSON-LD (Schema.org) |
+| **Publicación** | `ensure_article_for_tag` | Orquestar generación + deduplicación + SEO + inserción |
 | **Tiempo** | `current_week_window_utc_for_madrid`, `today_window_utc_for_madrid` | Calcular ventana semanal en zona horaria de Madrid |
+| **Texto** | `extract_plain_text`, `count_words`, `estimate_reading_time` | Análisis del cuerpo HTML para métricas SEO |
 
 ---
 
@@ -192,37 +202,54 @@ Si no hay candidatos con tag disponible, intenta elegir una categoría/subcatego
 
 ---
 
-### Paso 7 — Generación del artículo con IA
+### Paso 7 — Generación del artículo con IA (SEO)
 
-`ensure_article_for_tag(...)` orquesta el bucle de generación con hasta `MAX_TITLE_RETRIES` intentos:
+`ensure_article_for_tag(...)` orquesta la generación en dos fases:
 
 ```
-bucle:
-  1. Llamar a generate_article_with_ai()  →  (title, summary, body)
-  2. Si el título es demasiado similar a uno reciente → añadirlo a avoid_titles y reintentar
-  3. Si el título es único → salir del bucle
+Fase 1: Generar artículo completo (única llamada costosa)
+  → generate_article_with_ai()  →  (title, summary, body, keywords)
+  → Si el título es demasiado similar → Fase 2
+
+Fase 2: Regenerar solo el título (llamadas ligeras, máx. 5 intentos)
+  → generate_title_with_ai()  →  nuevo título
+  → Si es único → actualizar <h1> del body y aceptar
 ```
 
-Cada intento llama a `generate_article_with_ai`, que:
+Cada llamada a `generate_article_with_ai`:
 
-1. Construye el prompt con `build_generation_prompt`.
+1. Construye el prompt SEO con `build_generation_prompt` (incluye instrucciones detalladas de SEO on-page).
 2. Intenta la **API Responses moderna** (`client.responses.create`).
 3. Si falla, usa **Chat Completions** como fallback.
 4. Extrae el bloque JSON de la respuesta con `_extract_json_block`.
 5. Parsea el JSON con `_safe_json_loads` (tolerante a comillas tipográficas).
-6. Devuelve `(title, summary, body)`.
+6. Devuelve `(title, summary, body, keywords)`.
 
 ---
 
-### Paso 8 — Inserción en MongoDB
+### Paso 8 — Generación de metadatos SEO e inserción en MongoDB
 
-Si el título es único:
+Si el título es único, se generan todos los metadatos SEO y se inserta el documento:
 
 ```python
+# Métricas del contenido
+word_count = count_words(body)
+reading_time = estimate_reading_time(body)
+
+# Metadatos SEO
+meta_title = title[:60]
+meta_description = summary[:160]
+canonical_url = build_canonical_url(SITE, slug)
+structured_data = build_json_ld_structured_data(...)  # JSON-LD Schema.org
+
 doc = {
     "title": title, "slug": slug, "summary": summary, "body": body,
     "category": ObjectId(...), "tags": [tag_id],
     "author": author_id, "status": "published",
+    "metaTitle": meta_title, "metaDescription": meta_description,
+    "canonicalUrl": canonical_url, "structuredData": structured_data,
+    "ogTitle": meta_title, "ogDescription": meta_description, "ogType": "article",
+    "wordCount": word_count, "readingTime": reading_time, "keywords": keywords,
     "publishDate": now, "createdAt": now, ...
 }
 db[ARTICLES_COLL].insert_one(doc)
@@ -586,9 +613,23 @@ Las comprobaciones de cobertura son entonces O(1) (consulta en un `set`), en lug
 
 ## 8. Integración con OpenAI
 
-### Prompt generado
+### System message (contexto del modelo)
 
-`build_generation_prompt(parent_name, subcat_name, tag_text, avoid_titles)` produce un prompt en español que instruye al modelo a devolver **únicamente un JSON** con la estructura:
+El modelo recibe un system message que lo configura como **experto en SEO técnico y redacción**:
+
+```python
+GENERATION_SYSTEM_MSG = (
+    "Eres redactor técnico sénior y experto en SEO especializado en Spring Boot, Java y tecnologías relacionadas. "
+    "Generas contenido optimizado para motores de búsqueda con HTML semántico, "
+    "estructura de encabezados jerárquica (h1 > h2 > h3), uso estratégico de palabras clave "
+    "y metadatos precisos. "
+    "Devuelves SOLO JSON válido con: title, summary, body (HTML semántico), keywords."
+)
+```
+
+### Prompt de generación (SEO on-page)
+
+`build_generation_prompt(parent_name, subcat_name, tag_text, avoid_titles)` produce un prompt en español con instrucciones SEO detalladas que instruye al modelo a devolver **únicamente un JSON** con la estructura:
 
 ```json
 {
@@ -601,10 +642,10 @@ Las comprobaciones de cobertura son entonces O(1) (consulta en un `set`), en lug
 
 | Campo | Descripción | Restricción |
 |---|---|---|
-| `title` | Título del artículo, optimizado para SEO | máx. 60 caracteres |
-| `summary` | 2-3 frases de resumen (metadescripción) | máx. 160 caracteres |
-| `body` | Cuerpo completo en HTML semántico con `<h1>`, secciones `<h2>`, `<pre><code>`, FAQ y conclusión | — |
-| `keywords` | Lista de 3-7 palabras clave SEO en minúsculas | sin repetir el título exacto |
+| `title` | Título del artículo, optimizado para SEO y CTR, con keyword principal al inicio | máx. 60 caracteres |
+| `summary` | Meta descripción SEO con keyword y llamada a la acción implícita | máx. 160 caracteres |
+| `body` | Cuerpo completo en HTML semántico con `<h1>`, secciones `<h2>`, `<h3>`, `<pre><code>`, `<strong>`, `<em>`, FAQ con preguntas reales y conclusión con CTA | — |
+| `keywords` | Lista de 5-7 palabras clave SEO en minúsculas, incluyendo variaciones long-tail | sin repetir el título exacto |
 
 ### Estrategia de llamada con fallback
 
@@ -673,39 +714,93 @@ El artículo que se inserta en la colección de artículos tiene la siguiente es
 
 ```json
 {
-  "title":          "Cómo usar @Data en Lombok",
-  "slug":           "como-usar-data-en-lombok",
-  "summary":        "Resumen del artículo...",
-  "body":           "<h1>...</h1><p>...</p>...",
-  "category":       ObjectId("..."),
-  "tags":           [ObjectId("...")],
-  "author":         ObjectId("..."),
-  "status":         "published",
-  "likes":          [],
-  "favoritedBy":    [],
-  "isVisible":      true,
-  "publishDate":    ISODate("..."),
-  "generatedAt":    ISODate("..."),
-  "createdAt":      ISODate("..."),
-  "updatedAt":      ISODate("..."),
-  "images":         null,
-  "wordCount":      1240,
-  "readingTime":    6,
-  "keywords":       ["lombok", "@data", "java", "boilerplate", "pojo"],
-  "metaTitle":      "Cómo usar @Data en Lombok",
-  "metaDescription":"Aprende a reducir el código boilerplate con @Data de Lombok en Spring Boot."
+  "title":           "Cómo usar @Data en Lombok",
+  "slug":            "como-usar-data-en-lombok",
+  "summary":         "Resumen del artículo...",
+  "body":            "<h1>...</h1><p>...</p>...",
+  "category":        "ObjectId(...)",
+  "tags":            ["ObjectId(...)"],
+  "author":          "ObjectId(...)",
+  "status":          "published",
+  "likes":           [],
+  "favoritedBy":     [],
+  "isVisible":       true,
+  "publishDate":     "ISODate(...)",
+  "generatedAt":     "ISODate(...)",
+  "createdAt":       "ISODate(...)",
+  "updatedAt":       "ISODate(...)",
+  "images":          null,
+  "wordCount":       1240,
+  "readingTime":     6,
+  "keywords":        ["lombok", "@data", "java", "boilerplate", "pojo"],
+  "metaTitle":       "Cómo usar @Data en Lombok",
+  "metaDescription": "Aprende a reducir el código boilerplate con @Data de Lombok en Spring Boot.",
+  "canonicalUrl":    "https://tusitio.com/post/como-usar-data-en-lombok",
+  "ogTitle":         "Cómo usar @Data en Lombok",
+  "ogDescription":   "Aprende a reducir el código boilerplate con @Data de Lombok en Spring Boot.",
+  "ogType":          "article",
+  "structuredData":  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Cómo usar @Data en Lombok",
+    "description": "Aprende a reducir el código boilerplate con @Data de Lombok.",
+    "author": { "@type": "Person", "name": "adminUser" },
+    "publisher": { "@type": "Organization", "name": "tusitio.com", "url": "https://tusitio.com" },
+    "datePublished": "2025-06-15T08:00:00+00:00",
+    "dateModified": "2025-06-15T08:00:00+00:00",
+    "url": "https://tusitio.com/post/como-usar-data-en-lombok",
+    "mainEntityOfPage": { "@type": "WebPage", "@id": "https://tusitio.com/post/como-usar-data-en-lombok" },
+    "wordCount": 1240,
+    "timeRequired": "PT6M",
+    "inLanguage": "es",
+    "keywords": "lombok, @data, java, boilerplate, pojo",
+    "articleSection": "Lombok",
+    "about": [{ "@type": "Thing", "name": "@Data" }]
+  }
 }
 ```
 
+### Campos de contenido
+
 | Campo | Tipo | Descripción |
 |---|---|---|
+| `title` | `string` | Título del artículo generado por la IA. |
+| `slug` | `string` | Versión URL-friendly del título (sin acentos, minúsculas, guiones). Se garantiza único. |
+| `summary` | `string` | Resumen corto del artículo (meta descripción). |
+| `body` | `string` | Cuerpo completo del artículo en HTML semántico. |
 | `category` | `ObjectId` | Apunta a la **subcategoría** elegida (o a la categoría raíz si no hay subcategoría). |
 | `tags` | `[ObjectId]` | Lista de tags asociados. Puede ser vacía si no se encontró tag disponible. |
+| `author` | `ObjectId` | ID del usuario autor. |
+| `status` | `string` | Estado del artículo (`published`). |
+
+### Campos SEO
+
+| Campo | Tipo | Límite | Descripción |
+|---|---|---|---|
+| `metaTitle` | `string` | ≤ 60 chars | Título SEO optimizado. Para la etiqueta `<title>` de la página. |
+| `metaDescription` | `string` | ≤ 160 chars | Meta descripción SEO. Para `<meta name="description">`. |
+| `canonicalUrl` | `string` | — | URL canónica completa (`{SITE}/post/{slug}`). Para `<link rel="canonical">`. |
+| `keywords` | `[string]` | 5-7 items | Palabras clave SEO en minúsculas. Para `<meta name="keywords">`. |
+| `ogTitle` | `string` | ≤ 60 chars | Título Open Graph. Para `<meta property="og:title">`. |
+| `ogDescription` | `string` | ≤ 160 chars | Descripción Open Graph. Para `<meta property="og:description">`. |
+| `ogType` | `string` | — | Tipo Open Graph (`article`). Para `<meta property="og:type">`. |
+| `structuredData` | `object` | — | JSON-LD Schema.org `TechArticle`. Para `<script type="application/ld+json">`. |
+
+### Campos de métricas
+
+| Campo | Tipo | Descripción |
+|---|---|---|
 | `wordCount` | `int` | Número de palabras del cuerpo HTML (texto plano). |
 | `readingTime` | `int` | Tiempo de lectura estimado en minutos (`ceil(wordCount / 230)`), mínimo 1. |
-| `keywords` | `[str]` | Palabras clave SEO devueltas por la IA (3-7 términos en minúsculas). |
-| `metaTitle` | `str` | Título SEO, truncado a 60 caracteres si es necesario. |
-| `metaDescription` | `str` | Descripción SEO, truncada a 160 caracteres si es necesario. |
+
+### Campos de fechas
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `publishDate` | `ISODate` | Fecha y hora de publicación (UTC). |
+| `generatedAt` | `ISODate` | Fecha y hora de generación (UTC). |
+| `createdAt` | `ISODate` | Fecha de creación del documento (UTC). |
+| `updatedAt` | `ISODate` | Fecha de última actualización (UTC). |
 
 > Todas las fechas se almacenan en **UTC**.
 
@@ -861,3 +956,196 @@ El artículo que se inserta en la colección de artículos tiene la siguiente es
                               └─► generate_article_with_ai()
                                   insert_one(doc)  ← categoría + tag asignados
 ```
+
+---
+
+## 13. Optimización SEO completa
+
+Esta sección documenta todas las funcionalidades SEO del sistema, cómo se generan y cómo se relacionan con las categorías, subcategorías y tags.
+
+---
+
+### 13.1 Pipeline SEO del artículo
+
+El flujo completo de generación SEO sigue estos pasos:
+
+```
+Tag seleccionado (keyword principal)
+    │
+    ▼
+build_generation_prompt()
+    │  → Prompt SEO con instrucciones de:
+    │    · Título SEO ≤60 chars con keyword al inicio
+    │    · Meta descripción ≤160 chars con CTA
+    │    · 5-7 keywords long-tail
+    │    · HTML semántico (h1 > h2 > h3)
+    │    · <strong>/<em> para énfasis
+    │    · FAQ con preguntas reales
+    │    · Conclusión con CTA
+    │
+    ▼
+generate_article_with_ai()
+    │  → (title, summary, body, keywords)
+    │
+    ▼
+ensure_article_for_tag()  ← orquestador principal
+    │
+    ├─ slugify(title)          → slug SEO-friendly
+    ├─ count_words(body)       → wordCount
+    ├─ estimate_reading_time() → readingTime
+    ├─ metaTitle               → title[:60]
+    ├─ metaDescription         → summary[:160]
+    ├─ build_canonical_url()   → canonicalUrl
+    ├─ build_json_ld_structured_data()  → structuredData
+    ├─ ogTitle, ogDescription, ogType   → Open Graph
+    │
+    ▼
+db[articles].insert_one(doc)
+    → Documento con TODOS los campos SEO
+```
+
+---
+
+### 13.2 Funciones SEO en detalle
+
+#### `build_canonical_url(site: str, slug: str) → str`
+
+Construye la URL canónica del artículo:
+
+```python
+build_canonical_url("https://tusitio.com", "como-usar-data-en-lombok")
+# → "https://tusitio.com/post/como-usar-data-en-lombok"
+```
+
+- Si `site` o `slug` están vacíos, devuelve `""`.
+- Elimina barras finales del dominio para evitar duplicados.
+- Se usa para la etiqueta `<link rel="canonical">` y en los datos estructurados.
+
+#### `build_json_ld_structured_data(...) → dict`
+
+Genera un diccionario con datos estructurados JSON-LD siguiendo el vocabulario [Schema.org](https://schema.org/TechArticle). Campos incluidos:
+
+| Campo Schema.org | Valor | Origen |
+|---|---|---|
+| `@type` | `TechArticle` | Fijo (artículos técnicos) |
+| `headline` | Título (≤ 110 chars) | `title` del artículo |
+| `description` | Resumen (≤ 200 chars) | `summary` del artículo |
+| `author` | `{ @type: Person, name: ... }` | `AUTHOR_USERNAME` |
+| `publisher` | `{ @type: Organization, name: ..., url: ... }` | `SITE` |
+| `datePublished` | ISO 8601 | Fecha de publicación |
+| `dateModified` | ISO 8601 | Fecha de modificación |
+| `url` | URL canónica | `canonicalUrl` |
+| `mainEntityOfPage` | `{ @type: WebPage, @id: ... }` | `canonicalUrl` |
+| `wordCount` | Número entero | `count_words(body)` |
+| `timeRequired` | `PT{n}M` (ISO 8601 duration) | `estimate_reading_time(body)` |
+| `inLanguage` | `es` | Fijo (español) |
+| `keywords` | String separado por comas | `keywords` del artículo |
+| `articleSection` | Nombre de la subcategoría | Subcategoría seleccionada |
+| `about` | `[{ @type: Thing, name: ... }]` | Tags del artículo |
+
+---
+
+### 13.3 Relación SEO ↔ Categorías, Subcategorías y Tags
+
+La jerarquía de tres niveles tiene un papel directo en la estrategia SEO:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  CATEGORÍA PADRE (Silo temático / Content cluster)                   │
+│  ej. "Spring Boot"                                                   │
+│                                                                      │
+│  ROL SEO:                                                            │
+│  · Define el cluster de contenido (topic cluster)                   │
+│  · Los artículos dentro del mismo silo se refuerzan mutuamente      │
+│  · Mejora la autoridad temática (topical authority) del sitio       │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  SUBCATEGORÍA (Sección del artículo / Article section)        │  │
+│  │  ej. "Lombok"                                                  │  │
+│  │                                                                │  │
+│  │  ROL SEO:                                                      │  │
+│  │  · Campo `articleSection` en datos estructurados               │  │
+│  │  · Campo `category` en MongoDB (clasificación)                │  │
+│  │  · Permite navegación facetada en el frontend                  │  │
+│  │                                                                │  │
+│  │  ┌──────────────────────────────────────────────────────────┐ │  │
+│  │  │  TAG (Palabra clave principal / Primary keyword)         │ │  │
+│  │  │  ej. "@Data"                                              │ │  │
+│  │  │                                                           │ │  │
+│  │  │  ROL SEO:                                                 │ │  │
+│  │  │  · Semilla del prompt → keyword principal del artículo   │ │  │
+│  │  │  · Incluida en el título (al inicio para SEO)            │ │  │
+│  │  │  · Incluida en la meta descripción                       │ │  │
+│  │  │  · Incluida en el <h1> del body                          │ │  │
+│  │  │  · Campo `about` en datos estructurados                  │ │  │
+│  │  │  · Campo `tags` en MongoDB                               │ │  │
+│  │  └──────────────────────────────────────────────────────────┘ │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 13.4 Instrucciones SEO en el prompt de generación
+
+El prompt enviado a OpenAI incluye las siguientes directivas SEO:
+
+| Directiva | Objetivo SEO |
+|---|---|
+| "título optimizado para SEO y CTR" | Maximizar clics en resultados de búsqueda |
+| "palabra clave principal al inicio" | Mejora relevancia en SERPs |
+| "máx. 60 caracteres" | Evitar truncamiento en Google |
+| "meta-descripción SEO, máx. 160 chars" | Snippet completo en resultados |
+| "llamada a la acción implícita" | Mejorar CTR del snippet |
+| "5-7 keywords long-tail" | Capturar tráfico de cola larga |
+| "HTML semántico" | Facilitar interpretación por crawlers |
+| "h1 > h2 > h3 jerárquico" | Estructura de encabezados correcta |
+| "`<strong>` y `<em>` para términos clave" | Señal de importancia para buscadores |
+| "FAQ con preguntas como búsquedas reales" | Aparecer en "People also ask" de Google |
+| "Conclusión con CTA" | Reducir tasa de rebote, mejorar engagement |
+| "Párrafos cortos (3-4 líneas)" | Mejorar legibilidad y Core Web Vitals |
+| "Código en `<pre><code>`" | Rich snippets de código |
+
+---
+
+### 13.5 Cómo usar los campos SEO en tu frontend
+
+Para que los artículos generados se beneficien del SEO completo, tu frontend debe renderizar los metadatos almacenados:
+
+```html
+<head>
+  <!-- SEO básico -->
+  <title>{{ article.metaTitle }}</title>
+  <meta name="description" content="{{ article.metaDescription }}">
+  <meta name="keywords" content="{{ article.keywords | join(', ') }}">
+  <link rel="canonical" href="{{ article.canonicalUrl }}">
+
+  <!-- Open Graph (redes sociales) -->
+  <meta property="og:title" content="{{ article.ogTitle }}">
+  <meta property="og:description" content="{{ article.ogDescription }}">
+  <meta property="og:type" content="{{ article.ogType }}">
+  <meta property="og:url" content="{{ article.canonicalUrl }}">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ article.ogTitle }}">
+  <meta name="twitter:description" content="{{ article.ogDescription }}">
+
+  <!-- Datos estructurados JSON-LD -->
+  <script type="application/ld+json">
+    {{ article.structuredData | json }}
+  </script>
+</head>
+```
+
+---
+
+### 13.6 Métricas SEO generadas automáticamente
+
+| Métrica | Función | Uso en frontend |
+|---|---|---|
+| `wordCount` | `count_words(body)` | Mostrar "1240 palabras" en el artículo. Señal de contenido extenso para Google. |
+| `readingTime` | `estimate_reading_time(body, wpm=230)` | Mostrar "6 min de lectura". Mejora UX y engagement. |
+| `metaTitle` | `title[:60]` | Etiqueta `<title>`. |
+| `metaDescription` | `summary[:160]` | Etiqueta `<meta description>`. |
+| `canonicalUrl` | `build_canonical_url(SITE, slug)` | Etiqueta `<link rel="canonical">`. |
