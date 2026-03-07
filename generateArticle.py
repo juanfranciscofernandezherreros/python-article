@@ -156,7 +156,7 @@ def send_notification_email(subject: str, html_body: str, text_body: str = None)
         text_body = text_body or "Notificación del proceso."
         msg.set_content(text_body, charset="utf-8")
         msg.add_alternative(html_body, subtype="html", charset="utf-8")
-        with smtplib.SMTP(SMTP_HOST, int(SMTP_PORT),
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT,
                           local_hostname="localhost") as smtp:
             smtp.ehlo()
             smtp.starttls()
