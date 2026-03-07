@@ -7,7 +7,9 @@ import pytest
 
 from generateArticle import (
     as_list,
+    build_canonical_url,
     build_generation_prompt,
+    build_json_ld_structured_data,
     build_title_prompt,
     count_words,
     estimate_reading_time,
@@ -255,9 +257,9 @@ class TestBuildGenerationPrompt:
         assert len(result) > 100
 
     def test_prompt_is_compact(self):
-        """Optimized prompt should be under 900 characters (excluding avoid titles)."""
+        """Optimized prompt should be under 1500 characters (excluding avoid titles)."""
         prompt = build_generation_prompt("Cat", "Sub", "Tag")
-        assert len(prompt) < 900
+        assert len(prompt) < 1500
 
     def test_html_structure_instructions(self):
         """Prompt must specify key HTML elements for article structure."""
@@ -421,3 +423,162 @@ class TestSendNotificationEmailUtf8:
         # Verify the encoded bytes contain the RFC 2047 UTF-8 marker
         msg_bytes = msg.as_bytes()
         assert b"=?utf-8?" in msg_bytes.lower()
+
+
+# ---- build_canonical_url ----
+class TestBuildCanonicalUrl:
+    def test_basic(self):
+        assert build_canonical_url("https://example.com", "mi-articulo") == "https://example.com/post/mi-articulo"
+
+    def test_trailing_slash(self):
+        assert build_canonical_url("https://example.com/", "mi-articulo") == "https://example.com/post/mi-articulo"
+
+    def test_empty_site(self):
+        assert build_canonical_url("", "mi-articulo") == ""
+
+    def test_empty_slug(self):
+        assert build_canonical_url("https://example.com", "") == ""
+
+    def test_both_empty(self):
+        assert build_canonical_url("", "") == ""
+
+
+# ---- build_json_ld_structured_data ----
+class TestBuildJsonLdStructuredData:
+    def _make_data(self, **overrides):
+        defaults = {
+            "title": "Cómo usar @Data en Lombok",
+            "summary": "Aprende a reducir boilerplate con @Data.",
+            "canonical_url": "https://example.com/post/como-usar-data-en-lombok",
+            "keywords": ["lombok", "@data", "java"],
+            "author_name": "adminUser",
+            "date_published": "2025-01-01T00:00:00+00:00",
+            "date_modified": "2025-01-01T00:00:00+00:00",
+            "word_count": 1200,
+            "reading_time": 6,
+            "category_name": "Lombok",
+            "tag_names": ["@Data"],
+            "site": "https://example.com",
+        }
+        defaults.update(overrides)
+        return build_json_ld_structured_data(**defaults)
+
+    def test_returns_dict(self):
+        data = self._make_data()
+        assert isinstance(data, dict)
+
+    def test_context_is_schema_org(self):
+        data = self._make_data()
+        assert data["@context"] == "https://schema.org"
+
+    def test_type_is_tech_article(self):
+        data = self._make_data()
+        assert data["@type"] == "TechArticle"
+
+    def test_headline(self):
+        data = self._make_data(title="Mi título SEO")
+        assert data["headline"] == "Mi título SEO"
+
+    def test_headline_truncated_at_110(self):
+        long_title = "A" * 150
+        data = self._make_data(title=long_title)
+        assert len(data["headline"]) == 110
+
+    def test_language_is_spanish(self):
+        data = self._make_data()
+        assert data["inLanguage"] == "es"
+
+    def test_author_name(self):
+        data = self._make_data(author_name="testUser")
+        assert data["author"]["name"] == "testUser"
+
+    def test_url_present(self):
+        data = self._make_data()
+        assert data["url"] == "https://example.com/post/como-usar-data-en-lombok"
+
+    def test_main_entity_of_page(self):
+        data = self._make_data()
+        assert data["mainEntityOfPage"]["@id"] == "https://example.com/post/como-usar-data-en-lombok"
+
+    def test_no_url_when_canonical_empty(self):
+        data = self._make_data(canonical_url="")
+        assert "url" not in data
+        assert "mainEntityOfPage" not in data
+
+    def test_keywords_joined(self):
+        data = self._make_data(keywords=["spring", "boot", "java"])
+        assert data["keywords"] == "spring, boot, java"
+
+    def test_keywords_empty(self):
+        data = self._make_data(keywords=[])
+        assert data["keywords"] == ""
+
+    def test_word_count(self):
+        data = self._make_data(word_count=500)
+        assert data["wordCount"] == 500
+
+    def test_time_required_format(self):
+        data = self._make_data(reading_time=5)
+        assert data["timeRequired"] == "PT5M"
+
+    def test_article_section(self):
+        data = self._make_data(category_name="Spring Security")
+        assert data["articleSection"] == "Spring Security"
+
+    def test_publisher_from_site(self):
+        data = self._make_data(site="https://myblog.com")
+        assert data["publisher"]["@type"] == "Organization"
+        assert data["publisher"]["url"] == "https://myblog.com"
+
+    def test_no_publisher_when_no_site(self):
+        data = self._make_data(site="")
+        assert "publisher" not in data
+
+    def test_about_tags(self):
+        data = self._make_data(tag_names=["@Data", "Lombok"])
+        assert len(data["about"]) == 2
+        assert data["about"][0]["name"] == "@Data"
+
+    def test_no_about_when_no_tags(self):
+        data = self._make_data(tag_names=[])
+        assert "about" not in data
+
+    def test_serializable_to_json(self):
+        """Structured data must be JSON-serializable for embedding in HTML."""
+        data = self._make_data()
+        json_str = json.dumps(data, ensure_ascii=False)
+        parsed = json.loads(json_str)
+        assert parsed["@type"] == "TechArticle"
+
+
+# ---- SEO enhancements in system messages ----
+class TestSeoSystemMessages:
+    def test_generation_system_msg_mentions_seo(self):
+        assert "SEO" in GENERATION_SYSTEM_MSG
+
+    def test_generation_system_msg_mentions_semantic_html(self):
+        assert "semántico" in GENERATION_SYSTEM_MSG or "HTML" in GENERATION_SYSTEM_MSG
+
+    def test_title_system_msg_mentions_seo(self):
+        assert "SEO" in TITLE_SYSTEM_MSG
+
+    def test_generation_prompt_mentions_faq(self):
+        prompt = build_generation_prompt("Cat", "Sub", "Tag")
+        assert "FAQ" in prompt
+
+    def test_generation_prompt_mentions_cta(self):
+        prompt = build_generation_prompt("Cat", "Sub", "Tag")
+        assert "CTA" in prompt
+
+    def test_generation_prompt_mentions_long_tail(self):
+        prompt = build_generation_prompt("Cat", "Sub", "Tag")
+        assert "long-tail" in prompt
+
+    def test_generation_prompt_mentions_keyword_count(self):
+        prompt = build_generation_prompt("Cat", "Sub", "Tag")
+        assert "5-7" in prompt
+
+    def test_generation_prompt_mentions_strong_em(self):
+        """Prompt should instruct to use <strong>/<em> for keyword emphasis."""
+        prompt = build_generation_prompt("Cat", "Sub", "Tag")
+        assert "<strong>" in prompt or "strong" in prompt
