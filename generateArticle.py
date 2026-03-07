@@ -67,10 +67,16 @@ OPENAI_MAX_TITLE_TOKENS      = 100    # límite de tokens de salida para título
 
 # ============ SYSTEM MESSAGES (reutilizados en ambas APIs) ============
 GENERATION_SYSTEM_MSG = (
-    "Eres redactor técnico sénior de Spring Boot y Lombok. "
+    "Eres redactor técnico sénior y experto en SEO especializado en Spring Boot, Java y tecnologías relacionadas. "
+    "Generas contenido optimizado para motores de búsqueda con HTML semántico, "
+    "estructura de encabezados jerárquica (h1 > h2 > h3), uso estratégico de palabras clave "
+    "y metadatos precisos. "
     "Devuelves SOLO JSON válido con: title, summary, body (HTML semántico), keywords."
 )
-TITLE_SYSTEM_MSG = "Devuelve solo el título solicitado, sin comillas ni texto adicional."
+TITLE_SYSTEM_MSG = (
+    "Eres experto en SEO técnico. "
+    "Devuelve solo el título solicitado, sin comillas ni texto adicional."
+)
 
 # ============ HELPERS ============
 def str_id(x: Any) -> str:
@@ -152,6 +158,65 @@ def estimate_reading_time(body_html: str, wpm: int = 230) -> int:
     """Devuelve el tiempo de lectura estimado en minutos (mínimo 1, redondeando hacia arriba)."""
     words = count_words(body_html)
     return max(1, math.ceil(words / wpm))
+
+def build_canonical_url(site: str, slug: str) -> str:
+    """Construye la URL canónica del artículo a partir del dominio y el slug."""
+    if not site or not slug:
+        return ""
+    base = site.rstrip("/")
+    return f"{base}/post/{slug}"
+
+def build_json_ld_structured_data(
+    title: str,
+    summary: str,
+    canonical_url: str,
+    keywords: List[str],
+    author_name: str,
+    date_published: str,
+    date_modified: str,
+    word_count: int,
+    reading_time: int,
+    category_name: str,
+    tag_names: List[str],
+    site: str,
+) -> dict:
+    """
+    Genera datos estructurados JSON-LD (Schema.org) de tipo Article.
+
+    Estos datos permiten a los motores de búsqueda (Google, Bing, etc.)
+    entender mejor el contenido del artículo, mejorando la visibilidad
+    en resultados enriquecidos (rich snippets).
+    """
+    base_url = site.rstrip("/") if site else ""
+    data: Dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": title[:110],
+        "description": summary[:200],
+        "author": {
+            "@type": "Person",
+            "name": author_name,
+        },
+        "datePublished": date_published,
+        "dateModified": date_modified,
+        "wordCount": word_count,
+        "timeRequired": f"PT{reading_time}M",
+        "inLanguage": "es",
+        "keywords": ", ".join(keywords) if keywords else "",
+        "articleSection": category_name,
+    }
+    if canonical_url:
+        data["url"] = canonical_url
+        data["mainEntityOfPage"] = {"@type": "WebPage", "@id": canonical_url}
+    if base_url:
+        data["publisher"] = {
+            "@type": "Organization",
+            "name": base_url.replace("https://", "").replace("http://", ""),
+            "url": base_url,
+        }
+    if tag_names:
+        data["about"] = [{"@type": "Thing", "name": t} for t in tag_names]
+    return data
 
 # ========= Notificaciones / logging =========
 def send_notification_email(subject: str, html_body: str, text_body: str = None):
@@ -319,20 +384,23 @@ def build_generation_prompt(parent_name: str, subcat_name: str, tag_text: str, a
             "\nEvita títulos iguales o muy similares a: "
             + "; ".join(f'"{t}"' for t in avoid_list)
         )
-    return f"""Artículo en español sobre "{tag_text}" (categoría: "{parent_name}", subcategoría: "{subcat_name}").
+    return f"""Artículo SEO en español sobre "{tag_text}" (categoría: "{parent_name}", subcategoría: "{subcat_name}").
 Devuelve SOLO JSON: {{"title":"...","summary":"...","body":"...","keywords":[...]}}
 
-title: SEO, conciso (máx. 60 caracteres), palabra clave principal incluida.
-summary: meta-descripción SEO (máx. 160 caracteres), 2-3 frases con el valor del artículo.
-keywords: 3-7 palabras clave SEO en minúsculas, sin repetir título.
-body (HTML semántico bien cerrado):
-- <h1> con título (sin emojis).
-- Intro <p> que enganche y presente el problema.
-- 3-5 secciones <h2>: explicación técnica, buenas prácticas, casos reales.
-- Código en <pre><code class="language-...">. Funcional, copiable, convenciones del framework.
-- <h2> FAQ: 3-5 preguntas en <h3> con respuestas en <p>.
-- <h2> Conclusión con resumen y CTA.
+title: optimizado para SEO y CTR, conciso (máx. 60 caracteres), incluye palabra clave principal al inicio.
+summary: meta-descripción SEO (máx. 160 caracteres), incluye palabra clave, llamada a la acción implícita.
+keywords: 5-7 palabras clave SEO en minúsculas (long-tail incluidas), sin repetir el título exacto.
+body (HTML semántico bien cerrado, optimizado para SEO on-page):
+- <h1> con título (sin emojis), palabra clave principal incluida.
+- Intro <p> que enganche, presente el problema y contenga la keyword principal.
+- 3-5 secciones <h2> con keywords secundarias: explicación técnica, buenas prácticas, casos reales.
+- Subsecciones <h3> donde sea necesario para profundizar.
+- Código en <pre><code class="language-...">. Funcional, copiable, con comentarios descriptivos.
+- Usa <strong> y <em> para resaltar términos clave (sin abusar).
+- <h2> FAQ (Preguntas frecuentes): 3-5 preguntas en <h3> con respuestas en <p>. Redacta preguntas como búsquedas reales de usuarios.
+- <h2> Conclusión con resumen de puntos clave y CTA (llamada a la acción).
 - Listas <ul>/<ol> para ventajas, pasos o comparativas.
+- Párrafos cortos (3-4 líneas máx.) para mejorar la legibilidad.
 
 Tono profesional, sin relleno. JSON con comillas escapadas.{avoid_block}
 """
@@ -813,6 +881,30 @@ def ensure_article_for_tag(db, client_ai, tag, parent, subcat, recent_titles, au
     reading_time = estimate_reading_time(body)
     meta_title = title[:META_TITLE_MAX_LENGTH].rstrip() if len(title) > META_TITLE_MAX_LENGTH else title
     meta_description = summary[:META_DESCRIPTION_MAX_LENGTH].rstrip() if len(summary) > META_DESCRIPTION_MAX_LENGTH else summary
+    canonical_url = build_canonical_url(SITE, slug)
+
+    # Nombres legibles para categoría y tags (usados en datos estructurados)
+    category_display_name = (
+        subcat.get("name") if subcat else (parent.get("name") if parent else "General")
+    )
+    tag_display_names: List[str] = [tag_name(tag)] if tag else []
+
+    # Datos estructurados JSON-LD (Schema.org) para SEO
+    now_iso = now.isoformat()
+    structured_data = build_json_ld_structured_data(
+        title=title,
+        summary=summary,
+        canonical_url=canonical_url,
+        keywords=keywords,
+        author_name=AUTHOR_USERNAME,
+        date_published=now_iso,
+        date_modified=now_iso,
+        word_count=word_count,
+        reading_time=reading_time,
+        category_name=category_display_name,
+        tag_names=tag_display_names,
+        site=SITE,
+    )
 
     doc = {
         "title": title,
@@ -839,6 +931,11 @@ def ensure_article_for_tag(db, client_ai, tag, parent, subcat, recent_titles, au
         "keywords": keywords,
         "metaTitle": meta_title,
         "metaDescription": meta_description,
+        "canonicalUrl": canonical_url,
+        "structuredData": structured_data,
+        "ogTitle": meta_title,
+        "ogDescription": meta_description,
+        "ogType": "article",
     }
 
     db[ARTICLES_COLL].insert_one(doc)

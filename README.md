@@ -1,4 +1,23 @@
-# Publicación automática semanal con IA
+# Publicación automática semanal con IA — Optimizado para SEO
+
+Sistema de generación y publicación automática de artículos técnicos con inteligencia artificial (OpenAI), optimizado para **SEO on-page**, con datos estructurados **Schema.org**, metadatos **Open Graph** y gestión completa de **categorías**, **subcategorías** y **tags**.
+
+---
+
+## 📑 Índice
+
+- [🚀 Guía rápida de ejecución](#-guía-rápida-de-ejecución)
+- [📰 ¿Qué es este script?](#-qué-es-este-script)
+- [🔍 Funcionalidades SEO](#-funcionalidades-seo)
+- [⚙️ ¿Qué necesita para funcionar?](#️-qué-necesita-para-funcionar)
+- [🧩 Cómo organiza los temas: Categorías, Subcategorías y Tags](#-cómo-organiza-los-temas-categorías-subcategorías-y-tags)
+- [🧠 Qué hace paso a paso](#-qué-hace-paso-a-paso)
+- [📄 Documento del artículo generado (campos SEO)](#-documento-del-artículo-generado-campos-seo)
+- [📨 Tipos de notificaciones que envía](#-tipos-de-notificaciones-que-envía)
+- [🕐 Frecuencia de publicación](#-frecuencia-de-publicación)
+- [🔒 Seguridad y privacidad](#-seguridad-y-privacidad)
+- [🧾 En resumen](#-en-resumen)
+- [🌟 Ejemplo de funcionamiento real](#-ejemplo-de-funcionamiento-real)
 
 ---
 
@@ -68,7 +87,7 @@ Abre `.env` con tu editor y rellena, como mínimo:
 | `OPENAIAPIKEY` | Tu clave de API de OpenAI (`sk-...`). [Crear API key aquí](https://platform.openai.com/api-keys) |
 | `SMTP_*` / `FROM_EMAIL` / `NOTIFY_EMAIL` | Datos de tu servidor de correo (SMTP). Si usas Gmail, [crea una contraseña de aplicación aquí](https://myaccount.google.com/apppasswords) |
 | `AUTHOR_USERNAME` | Nombre del usuario autor en tu base de datos |
-| `SITE` | URL de tu web (p. ej. `https://tusitio.com`) |
+| `SITE` | URL de tu web (p. ej. `https://tusitio.com`) — **importante para SEO** (URLs canónicas y datos estructurados) |
 
 > **Nota:** Si usas el `docker-compose.yml` incluido para MongoDB local, cambia `MONGODB_URI` a `mongodb://admin:admin1234@localhost:27017/blogdb?authSource=admin`.
 
@@ -118,14 +137,14 @@ python seed_data.py
 
 El script crea (o actualiza de forma idempotente) los siguientes temas:
 
-| Categoría padre | Subcategorías |
-|---|---|
-| **Spring Boot** | Spring Boot Core · Spring Security · Spring Data JPA · Spring MVC REST · Spring Boot Testing · Lombok |
-| **Data & Persistencia** | JPA e Hibernate · Bases de Datos SQL · NoSQL y MongoDB · Migraciones de Esquema |
-| **Inteligencia Artificial** | Spring AI · LLMs y Modelos de Lenguaje · Machine Learning con Java · Vector Databases y RAG |
+| Categoría padre | Subcategorías | Tags por subcategoría |
+|---|---|---|
+| **Spring Boot** | Spring Boot Core · Spring Security · Spring Data JPA · Spring MVC REST · Spring Boot Testing · Lombok | 10 tags cada una |
+| **Data & Persistencia** | JPA e Hibernate · Bases de Datos SQL · NoSQL y MongoDB · Migraciones de Esquema | 8-10 tags cada una |
+| **Inteligencia Artificial** | Spring AI · LLMs y Modelos de Lenguaje · Machine Learning con Java · Vector Databases y RAG | 10 tags cada una |
 
 Cada subcategoría incluye 8-10 tags específicos (p. ej. `@Entity y @Table`,
-`JWT Authentication`, `RAG (Retrieval Augmented Generation)`).
+`JWT Authentication`, `RAG (Retrieval Augmented Generation)`). En total, **3 categorías padre**, **14 subcategorías** y **~140 tags**.
 
 ### 6. Ejecutar el script principal
 
@@ -136,15 +155,16 @@ python3 generateArticle.py
 El script:
 1. Comprueba la configuración.
 2. Se conecta a MongoDB.
-3. Busca un tag sin artículo publicado.
-4. Genera el artículo con OpenAI.
-5. Lo guarda en la base de datos y te notifica por correo.
+3. Busca un tag sin artículo publicado (regla estricta de cobertura).
+4. Genera el artículo con OpenAI (optimizado para SEO).
+5. Genera metadatos SEO: `metaTitle`, `metaDescription`, `canonicalUrl`, datos estructurados JSON-LD y Open Graph.
+6. Lo guarda en la base de datos y te notifica por correo.
 
 ### 7. Ejecutar los tests
 
 ```bash
 pip install pytest
-python -m pytest test_generateArticle.py -v
+python -m pytest test_generateArticle.py test_seed_data.py -v
 ```
 
 ### Comandos útiles de Docker Compose (solo para MongoDB local)
@@ -163,14 +183,89 @@ docker compose down -v
 ---
 
 ## 📰 ¿Qué es este script?
-Este programa automatiza la publicación de artículos en tu web.  
-Cada semana genera **un nuevo artículo técnico**, escrito con ayuda de **inteligencia artificial (IA)**, y lo guarda directamente en tu **base de datos** (como si lo hubieras subido tú).
 
-Además, **te avisa por correo electrónico** de todo lo que hace:  
-- si empezó correctamente,  
-- si publicó algo,  
-- si encontró algún error,  
+Este programa automatiza la publicación de artículos técnicos en tu web, **optimizados para SEO desde su generación**.
+
+Cada semana genera **un nuevo artículo técnico**, escrito con ayuda de **inteligencia artificial (IA)**, y lo guarda directamente en tu **base de datos MongoDB** con todos los metadatos necesarios para posicionamiento en buscadores.
+
+Además, **te avisa por correo electrónico** de todo lo que hace:
+- si empezó correctamente,
+- si publicó algo,
+- si encontró algún error,
 - o si ya no quedan temas disponibles.
+
+---
+
+## 🔍 Funcionalidades SEO
+
+El script implementa múltiples capas de optimización SEO que se aplican automáticamente en cada artículo generado:
+
+### SEO On-Page (contenido)
+
+| Característica | Descripción |
+|---|---|
+| **Título SEO** (`metaTitle`) | Máximo 60 caracteres, con la palabra clave principal al inicio. Optimizado para CTR en resultados de búsqueda. |
+| **Meta descripción** (`metaDescription`) | Máximo 160 caracteres, incluye keyword y llamada a la acción implícita. |
+| **Palabras clave** (`keywords`) | 5-7 keywords en minúsculas, incluyendo variaciones long-tail. |
+| **HTML semántico** | Estructura jerárquica `<h1>` → `<h2>` → `<h3>`, uso de `<strong>` y `<em>` para énfasis. |
+| **Sección FAQ** | Preguntas frecuentes redactadas como búsquedas reales de usuarios (mejora visibilidad en "People also ask"). |
+| **Párrafos cortos** | 3-4 líneas máximo para mejorar legibilidad y reducir tasa de rebote. |
+| **Código funcional** | Bloques `<pre><code>` con comentarios descriptivos y `class="language-..."` para resaltado. |
+
+### SEO Técnico (metadatos)
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `canonicalUrl` | `string` | URL canónica completa del artículo (`{SITE}/post/{slug}`). Evita contenido duplicado. |
+| `structuredData` | `object` | Datos estructurados **JSON-LD** con Schema.org tipo `TechArticle`. Mejora rich snippets en Google. |
+| `ogTitle` | `string` | Título para Open Graph (Facebook, LinkedIn, Twitter). |
+| `ogDescription` | `string` | Descripción para Open Graph. |
+| `ogType` | `string` | Tipo Open Graph (`article`). |
+| `metaTitle` | `string` | Título SEO optimizado (≤ 60 caracteres). |
+| `metaDescription` | `string` | Meta descripción SEO (≤ 160 caracteres). |
+
+### Datos estructurados JSON-LD (Schema.org)
+
+Cada artículo incluye un objeto `structuredData` con formato JSON-LD listo para inyectar en el `<head>` de la página. Ejemplo:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Cómo usar @Data en Lombok",
+  "description": "Aprende a reducir el código boilerplate con @Data de Lombok.",
+  "author": { "@type": "Person", "name": "adminUser" },
+  "publisher": { "@type": "Organization", "name": "tusitio.com", "url": "https://tusitio.com" },
+  "datePublished": "2025-06-15T08:00:00+00:00",
+  "dateModified": "2025-06-15T08:00:00+00:00",
+  "url": "https://tusitio.com/post/como-usar-data-en-lombok",
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "https://tusitio.com/post/como-usar-data-en-lombok" },
+  "wordCount": 1240,
+  "timeRequired": "PT6M",
+  "inLanguage": "es",
+  "keywords": "lombok, @data, java, boilerplate, spring boot",
+  "articleSection": "Lombok",
+  "about": [{ "@type": "Thing", "name": "@Data" }]
+}
+```
+
+Para usarlo en tu frontend, inyéctalo en el HTML de la página del artículo:
+
+```html
+<script type="application/ld+json">
+  {{ article.structuredData | json }}
+</script>
+```
+
+### Relación entre SEO y la jerarquía Categoría → Subcategoría → Tag
+
+La estructura de tres niveles no solo organiza el contenido, sino que refuerza el SEO:
+
+| Nivel | Rol SEO |
+|---|---|
+| **Categoría padre** | Define el **silo temático** (cluster de contenido). Los buscadores premian sitios con contenido agrupado temáticamente. |
+| **Subcategoría** | Define el **campo `articleSection`** en los datos estructurados y la clasificación del artículo. |
+| **Tag** | Define la **palabra clave principal** del artículo. Es la semilla del prompt que genera el contenido. |
 
 ---
 
@@ -183,41 +278,88 @@ Antes de poder publicar artículos, el script necesita algunos datos y accesos:
 | **Base de datos MongoDB** | Donde están las categorías, etiquetas (tags), usuarios y artículos. Puede ser un cluster Atlas o una instancia local. |
 | **Clave de OpenAI** | Es la llave que permite que la IA escriba los artículos. |
 | **Servidor de correo (SMTP)** | Para poder enviarte emails con las notificaciones. |
-| **Usuario autor** | El nombre del usuario (por ejemplo “adminUser”) con el que se publicarán los artículos. |
+| **Usuario autor** | El nombre del usuario (por ejemplo "adminUser") con el que se publicarán los artículos. |
+| **URL del sitio (`SITE`)** | Necesaria para generar URLs canónicas y datos estructurados correctos. |
 
 Todos esos datos se guardan en un archivo oculto llamado **`.env`**, que el script lee automáticamente.
 
 ---
 
-## 🧩 Cómo organiza los temas
+## 🧩 Cómo organiza los temas: Categorías, Subcategorías y Tags
 
-Tu sitio tiene 3 niveles de estructura:
+Tu sitio tiene **3 niveles de estructura jerárquica**:
 
-1. **Categorías** → grandes temas (por ejemplo “Spring Boot”, “Bases de datos”).  
-2. **Subcategorías** → temas más concretos dentro de cada categoría (“Lombok”, “JPA”).  
-3. **Tags (etiquetas)** → palabras clave específicas que definen el tema del artículo (“@Data”, “JpaRepository”, “Spring Profiles”).
+```
+Categoría padre (ej. "Spring Boot")
+  └── Subcategoría (ej. "Lombok")
+        └── Tag (ej. "@Data")
+              └── Artículo generado
+```
 
-👉 El artículo se genera **a partir de un tag**.  
-Pero para elegirlo, el script necesita saber en qué categoría y subcategoría está ese tag.
+### Nivel 1 — Categorías padre
 
----
+Son los grandes pilares temáticos del blog. Actualmente hay **3 categorías padre**:
 
-## 💡 ¿Y si una categoría no tiene subcategorías?
+| Categoría | Descripción | Subcategorías |
+|---|---|---|
+| **Spring Boot** | Desarrollo de aplicaciones Java con el framework Spring Boot | 6 subcategorías |
+| **Data & Persistencia** | Gestión y persistencia de datos en aplicaciones Java | 4 subcategorías |
+| **Inteligencia Artificial** | Integración de IA y Machine Learning con Java y Spring | 4 subcategorías |
 
-No pasa nada.  
-El script está preparado para publicar artículos también **aunque una categoría no tenga subcategorías**, siempre que **tenga tags (etiquetas)** asociados directamente.
+### Nivel 2 — Subcategorías
 
-Así puede funcionar con cualquier estructura, sencilla o compleja.
+Temas más concretos dentro de cada categoría. Cada subcategoría:
+- Tiene un campo `parent` que apunta a la categoría padre.
+- Tiene un array `tags` con los IDs de sus tags.
+- Define la sección del artículo (`articleSection` en datos estructurados).
+
+**Spring Boot:**
+| Subcategoría | Nº de Tags | Ejemplo de tags |
+|---|---|---|
+| Spring Boot Core | 10 | `@SpringBootApplication`, `Auto-configuration`, `Spring Profiles` |
+| Spring Security | 10 | `JWT Authentication`, `OAuth2 y OpenID Connect`, `CORS Configuration` |
+| Spring Data JPA | 10 | `@Entity y @Table`, `JpaRepository`, `@Transactional` |
+| Spring MVC REST | 10 | `@RestController`, `ResponseEntity`, `OpenAPI y Swagger` |
+| Spring Boot Testing | 10 | `@SpringBootTest`, `Testcontainers`, `MockMvc` |
+| Lombok | 10 | `@Data`, `@Builder`, `@Slf4j`, `@SuperBuilder` |
+
+**Data & Persistencia:**
+| Subcategoría | Nº de Tags | Ejemplo de tags |
+|---|---|---|
+| JPA e Hibernate | 10 | `Hibernate Caching L1 y L2`, `Problema N+1 y soluciones`, `FetchType LAZY vs EAGER` |
+| Bases de Datos SQL | 10 | `PostgreSQL con Spring Boot`, `MySQL con Spring Boot`, `QueryDSL` |
+| NoSQL y MongoDB | 10 | `Spring Data MongoDB`, `@Document y @Field`, `Aggregation Pipeline con Spring` |
+| Migraciones de Esquema | 8 | `Flyway con Spring Boot`, `Liquibase con Spring Boot`, `Rollback con Flyway` |
+
+**Inteligencia Artificial:**
+| Subcategoría | Nº de Tags | Ejemplo de tags |
+|---|---|---|
+| Spring AI | 10 | `Spring AI Overview`, `ChatClient con Spring AI`, `Function Calling con Spring AI` |
+| LLMs y Modelos de Lenguaje | 10 | `OpenAI API con Java`, `GPT-4 y modelos avanzados`, `Prompt Engineering avanzado` |
+| Machine Learning con Java | 10 | `Deeplearning4j`, `TensorFlow Java`, `ONNX Runtime en Java` |
+| Vector Databases y RAG | 10 | `RAG (Retrieval Augmented Generation)`, `Embeddings con Spring AI`, `Pinecone con Java` |
+
+### Nivel 3 — Tags
+
+Los tags son las **palabras clave específicas** que definen el tema del artículo. Cada tag:
+- Tiene un `categoryId` que apunta a su subcategoría.
+- Tiene un `parentCategoryId` que apunta a la categoría padre.
+- Es la **semilla** a partir de la cual la IA genera el artículo.
+- Se convierte en la **keyword principal** del contenido generado.
+
+### ¿Y si una categoría no tiene subcategorías?
+
+No pasa nada. El script está preparado para publicar artículos también **aunque una categoría no tenga subcategorías**, siempre que **tenga tags** asociados directamente.
 
 ---
 
 ## 🧠 Qué hace paso a paso
 
 ### 1) Empieza y revisa la configuración
-Cuando lo ejecutas, lo primero que hace es comprobar que están todas las claves y accesos necesarios:  
-- OpenAI  
-- MongoDB  
-- SMTP (correo electrónico)  
+Cuando lo ejecutas, lo primero que hace es comprobar que están todas las claves y accesos necesarios:
+- OpenAI
+- MongoDB
+- SMTP (correo electrónico)
 - Colecciones (categorías, tags, usuarios y artículos)
 
 Si falta algo, te envía un correo avisándote y **se detiene**.
@@ -234,54 +376,107 @@ Si no encuentra alguna de esas cosas, también te lo avisa por correo.
 Antes de crear nada nuevo, revisa si **ya se publicó un artículo esta semana** (de lunes a domingo, según el horario de Madrid).
 
 - Si **ya hay uno**, **no publica otro** y te manda un email diciendo:
-  > “Ya existe un artículo esta semana, no se publicará ninguno nuevo.”
+  > "Ya existe un artículo esta semana, no se publicará ninguno nuevo."
 
 - Si **no hay ninguno**, continúa con el proceso.
 
-### 4) Busca un tema disponible
-El script examina todas las categorías y subcategorías con sus etiquetas.
+### 4) Busca un tema disponible (regla estricta de cobertura)
+El script examina todas las categorías, subcategorías y tags:
 
-- Si encuentra **algún tag que todavía no tenga artículos publicados**, lo elige aleatoriamente.
-- Si **todos los tags ya tienen artículos**, te envía un correo:
-  > “No queda ninguna categoría/tag sin artículos publicados. No se publicará nada.”
+- Aplica la **regla estricta**: solo elige un tema si los **tres niveles** (categoría padre, subcategoría y tag) **no tienen aún ningún artículo publicado**.
+- Si encuentra un tag que cumpla, lo elige aleatoriamente.
+- Si **todos los tags ya tienen artículos**, intenta publicar sobre una subcategoría sin cobertura.
+- Si todo está cubierto, te envía un correo y termina.
 
-y termina el proceso.
+### 5) Pide a la IA que escriba el artículo (optimizado para SEO)
+Una vez que elige el tag, genera un encargo para la IA con instrucciones SEO detalladas:
 
-### 5) Pide a la IA que escriba el artículo
-Una vez que elige el tag, genera un encargo para la IA con instrucciones muy claras, por ejemplo:
+> "Escribe un artículo SEO en español sobre *@Builder* (categoría: Spring Boot, subcategoría: Lombok).
+> Título optimizado para SEO y CTR (máx. 60 caracteres), con keyword principal al inicio.
+> Meta-descripción SEO (máx. 160 caracteres), con keyword y CTA implícita.
+> 5-7 keywords SEO long-tail en minúsculas.
+> HTML semántico con h1, h2, h3, `<strong>`, `<em>`, código funcional, FAQ y conclusión con CTA."
 
-> “Escribe un artículo en español sobre *@Builder* en Spring Boot.  
-> Usa estructura HTML, con título, introducción, secciones, ejemplos de código,  
-> una sección de preguntas frecuentes y una conclusión.”
-
-La IA devuelve el artículo completo en formato JSON con tres partes:
-- **title** (título)
-- **summary** (resumen)
-- **body** (contenido en HTML)
+La IA devuelve el artículo completo en formato JSON:
+- **title** — título optimizado para SEO (≤ 60 caracteres)
+- **summary** — meta descripción (≤ 160 caracteres)
+- **body** — contenido completo en HTML semántico
+- **keywords** — 5-7 palabras clave SEO
 
 ### 6) Revisa que el título sea único
 Para evitar duplicados o artículos parecidos:
-- Compara el nuevo título con los **50 más recientes**.
-- Si es **demasiado parecido**, vuelve a pedir otro título a la IA hasta 5 veces.
+- Compara el nuevo título con los **50 más recientes** usando `difflib.SequenceMatcher`.
+- Si es **demasiado parecido** (ratio ≥ 0.86), regenera solo el título (no el artículo entero) hasta 5 veces.
 
 Si después de varios intentos no consigue uno suficientemente diferente, te avisa por correo y no publica nada.
 
-### 7) Guarda el artículo en la base de datos
+### 7) Genera metadatos SEO y guarda el artículo
 Si todo está bien:
-- Crea un **slug** (la parte final del enlace, como `/post/mi-articulo`).
-- Asigna autor, fecha y estado “publicado”.
+- Crea un **slug** SEO-friendly (ej. `como-usar-builder-en-spring-boot`).
+- Calcula `wordCount` y `readingTime`.
+- Genera la **URL canónica** (`canonicalUrl`).
+- Genera los **datos estructurados JSON-LD** (Schema.org `TechArticle`).
+- Genera los metadatos **Open Graph** (`ogTitle`, `ogDescription`, `ogType`).
+- Asigna autor, fecha y estado "publicado".
 - Lo guarda en la colección de artículos de tu base de datos.
 
 Luego te envía un email con algo así:
 
-> ✅ **Artículo publicado**  
-> Título: “Cómo usar @Builder en Spring Boot”  
-> Enlace: `https://tuweb.com/post/como-usar-builder-en-spring-boot`  
+> ✅ **Artículo publicado**
+> Título: "Cómo usar @Builder en Spring Boot"
+> Enlace: `https://tuweb.com/post/como-usar-builder-en-spring-boot`
 > Tag: *@Builder*
 
 ### 8) Actualiza el historial y termina
 Añade el nuevo título a la lista interna para no repetirlo, y finaliza el proceso con un último mensaje en pantalla y por email:
-> “Proceso terminado. Artículos creados: 1 (límite semanal alcanzado).”
+> "Proceso terminado. Artículos creados: 1 (límite semanal alcanzado)."
+
+---
+
+## 📄 Documento del artículo generado (campos SEO)
+
+Cada artículo insertado en MongoDB incluye los siguientes campos:
+
+```json
+{
+  "title":           "Cómo usar @Data en Lombok",
+  "slug":            "como-usar-data-en-lombok",
+  "summary":         "Aprende a reducir el código boilerplate con @Data de Lombok.",
+  "body":            "<h1>...</h1><p>...</p>...",
+  "category":        "ObjectId(subcategoría)",
+  "tags":            ["ObjectId(tag)"],
+  "author":          "ObjectId(usuario)",
+  "status":          "published",
+  "publishDate":     "ISODate(...)",
+  "createdAt":       "ISODate(...)",
+  "updatedAt":       "ISODate(...)",
+  "wordCount":       1240,
+  "readingTime":     6,
+  "keywords":        ["lombok", "@data", "java", "boilerplate", "pojo"],
+  "metaTitle":       "Cómo usar @Data en Lombok",
+  "metaDescription": "Aprende a reducir el código boilerplate con @Data de Lombok en Spring Boot.",
+  "canonicalUrl":    "https://tusitio.com/post/como-usar-data-en-lombok",
+  "ogTitle":         "Cómo usar @Data en Lombok",
+  "ogDescription":   "Aprende a reducir el código boilerplate con @Data de Lombok en Spring Boot.",
+  "ogType":          "article",
+  "structuredData":  { "@context": "https://schema.org", "@type": "TechArticle", "..." }
+}
+```
+
+### Detalle de cada campo SEO
+
+| Campo | Tipo | Límite | Descripción |
+|---|---|---|---|
+| `metaTitle` | `string` | ≤ 60 chars | Título optimizado para la etiqueta `<title>` de la página. Google muestra ~60 caracteres en los resultados. |
+| `metaDescription` | `string` | ≤ 160 chars | Texto para la etiqueta `<meta name="description">`. Google muestra ~160 caracteres. |
+| `canonicalUrl` | `string` | — | URL completa del artículo para la etiqueta `<link rel="canonical">`. Evita penalizaciones por contenido duplicado. |
+| `keywords` | `[string]` | 5-7 items | Palabras clave para `<meta name="keywords">` y uso interno en la web. Incluye variaciones long-tail. |
+| `ogTitle` | `string` | ≤ 60 chars | Título para Open Graph: `<meta property="og:title">`. Se muestra al compartir en redes sociales. |
+| `ogDescription` | `string` | ≤ 160 chars | Descripción para Open Graph: `<meta property="og:description">`. |
+| `ogType` | `string` | — | Tipo Open Graph: `article`. Para `<meta property="og:type">`. |
+| `structuredData` | `object` | — | JSON-LD Schema.org `TechArticle`. Se inyecta como `<script type="application/ld+json">`. |
+| `wordCount` | `int` | — | Número de palabras del contenido. Útil para mostrar al usuario y para análisis de calidad. |
+| `readingTime` | `int` | — | Minutos de lectura estimados (`ceil(wordCount / 230)`). Mejora la UX y el engagement. |
 
 ---
 
@@ -290,10 +485,10 @@ Durante la ejecución, el script puede mandarte distintos tipos de mensajes por 
 
 | Tipo | Ejemplo |
 |------|----------|
-| ℹ️ **Info** | “Inicio de proceso” o “Datos cargados correctamente”. |
-| ✅ **Éxito** | “Artículo publicado con éxito”. |
-| ⚠️ **Advertencia** | “Ya existe un artículo esta semana” o “No quedan tags disponibles”. |
-| ❌ **Error** | “Fallo al conectar a MongoDB” o “Error generando artículo”. |
+| ℹ️ **Info** | "Inicio de proceso" o "Datos cargados correctamente". |
+| ✅ **Éxito** | "Artículo publicado con éxito". |
+| ⚠️ **Advertencia** | "Ya existe un artículo esta semana" o "No quedan tags disponibles". |
+| ❌ **Error** | "Fallo al conectar a MongoDB" o "Error generando artículo". |
 
 ---
 
@@ -301,11 +496,12 @@ Durante la ejecución, el script puede mandarte distintos tipos de mensajes por 
 - Publica **solo un artículo por semana**.
 - Usa el **horario de Madrid** para definir la semana (de lunes a domingo).
 - Si intentas ejecutarlo más veces dentro de la misma semana, lo detecta y se cancela automáticamente.
+- Puedes desactivar el límite semanal con `LIMIT_PUBLICATION=false` en el `.env`.
 
 ---
 
 ## 🔒 Seguridad y privacidad
-- Las contraseñas, claves de API y datos sensibles **no están dentro del código**.  
+- Las contraseñas, claves de API y datos sensibles **no están dentro del código**.
   Se guardan en el archivo `.env`, que **no debe compartirse**.
 - No envía datos a ningún sitio externo salvo a OpenAI (para generar el texto) y tu servidor de correo (para notificarte).
 
@@ -316,10 +512,11 @@ Durante la ejecución, el script puede mandarte distintos tipos de mensajes por 
 | Acción | Descripción |
 |--------|--------------|
 | 📚 Leer categorías, subcategorías y tags | Para saber de qué temas puede escribir |
-| 🔍 Buscar un tag sin artículo publicado | Para elegir un tema nuevo |
-| ✍️ Generar artículo con IA | Escribe título, resumen y cuerpo en HTML |
-| 🚫 Evitar repeticiones | No repite tags ni títulos similares |
-| 💾 Guardar en MongoDB | Publica directamente el nuevo artículo |
+| 🔍 Buscar un tag sin artículo publicado | Para elegir un tema nuevo (regla estricta en 3 niveles) |
+| ✍️ Generar artículo con IA (SEO) | Escribe título, resumen, cuerpo HTML y keywords optimizados para SEO |
+| 🏷️ Generar metadatos SEO | `metaTitle`, `metaDescription`, `canonicalUrl`, JSON-LD, Open Graph |
+| 🚫 Evitar repeticiones | No repite tags ni títulos similares (umbral 0.86) |
+| 💾 Guardar en MongoDB | Publica el artículo con todos los campos SEO |
 | 📧 Notificar por correo | Te informa de todo lo que ha hecho |
 
 ---
@@ -328,10 +525,13 @@ Durante la ejecución, el script puede mandarte distintos tipos de mensajes por 
 
 1. Lunes por la mañana se ejecuta el script.
 2. Detecta que no hay artículos esta semana.
-3. Encuentra el tag `@Data` sin artículos.
-4. Pide a la IA un artículo sobre “Uso de @Data en Lombok”.
-5. Lo publica con el usuario “adminUser”.
-6. Te manda un email:
-   > ✅ Artículo publicado: “Cómo simplificar tu código con @Data en Lombok”.
+3. Encuentra el tag `@Data` (subcategoría: Lombok, categoría: Spring Boot) sin artículos.
+4. Pide a la IA un artículo SEO sobre "Uso de @Data en Lombok".
+5. Recibe: título SEO, meta descripción, HTML semántico con FAQ y keywords.
+6. Genera la URL canónica, los datos estructurados JSON-LD y los metadatos Open Graph.
+7. Lo publica con el usuario "adminUser".
+8. Te manda un email:
+   > ✅ Artículo publicado: "Cómo simplificar tu código con @Data en Lombok".
+   > Enlace: https://tusitio.com/post/como-simplificar-tu-codigo-con-data-en-lombok
 
 La próxima vez que se ejecute esa misma semana, verá que ya hay uno publicado y **no hará nada más**.
