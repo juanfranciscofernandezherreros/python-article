@@ -115,7 +115,7 @@ python3 generateArticle.py \
 | `--author` / `-a` | ❌ | Nombre del autor | valor de `AUTHOR_USERNAME` |
 | `--site` | ❌ | URL base del sitio para URLs canónicas | valor de `SITE` |
 | `--language` / `-l` | ❌ | Código de idioma ISO 639-1 (`es`, `en`, `fr`…) | valor de `ARTICLE_LANGUAGE` |
-| `--avoid-titles` | ❌ | Títulos a evitar, separados por `;` | `""` |
+| `--avoid-titles` | ❌ | Títulos a evitar (separados por `;`). El script compara el nuevo título con esta lista y regenera si la similitud supera el umbral 0.86 | `""` |
 
 El script:
 1. Valida la configuración (clave de API disponible).

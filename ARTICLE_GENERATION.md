@@ -258,8 +258,6 @@ Usa `difflib.SequenceMatcher` sobre versiones normalizadas (sin acentos, minúsc
 
 Escapa `&`, `<` y `>` para uso seguro en correos HTML. Evita que el contenido del artículo rompa el HTML del email.
 
-Comprueba en memoria si ya existe el slug en el fichero de salida. (Nota: en la versión actual, el slug se genera directamente con `slugify(title)` sin comprobación de duplicados ya que cada ejecución produce un fichero JSON independiente.)
-
 ---
 
 ## 7. Gestión de categorías, subcategorías y tags
