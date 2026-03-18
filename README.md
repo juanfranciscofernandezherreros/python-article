@@ -7,6 +7,7 @@ Sistema de generación y publicación automática de artículos técnicos con in
 ## 📑 Índice
 
 - [🚀 Guía rápida de ejecución](#-guía-rápida-de-ejecución)
+- [🖥️ Interfaz web con Streamlit](#️-interfaz-web-con-streamlit)
 - [🐳 Despliegue con Docker](#-despliegue-con-docker)
 - [☸️ Despliegue en Kubernetes](#️-despliegue-en-kubernetes)
 - [☁️ Despliegue en Google Cloud (GCloud)](#️-despliegue-en-google-cloud-gcloud)
@@ -129,8 +130,37 @@ El script:
 
 ```bash
 pip install pytest
-python -m pytest test_generateArticle.py test_seed_data.py -v
+python -m pytest test_generateArticle.py test_seed_data.py test_streamlit_app.py -v
 ```
+
+---
+
+## 🖥️ Interfaz web con Streamlit
+
+Además del modo CLI, el proyecto incluye una **interfaz web** construida con [Streamlit](https://streamlit.io/) que permite generar artículos desde el navegador.
+
+### Ejecutar la interfaz web
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+Se abrirá automáticamente en `http://localhost:8501`.
+
+### Funcionalidades de la interfaz
+
+| Funcionalidad | Descripción |
+|---|---|
+| **Selección de taxonomía** | Dropdowns enlazados para categoría → subcategoría → tag, cargados desde `seed_data.py` |
+| **Opciones avanzadas** | Idioma, autor, URL del sitio, título personalizado y títulos a evitar |
+| **Vista previa** | Muestra el artículo generado con formato HTML |
+| **Metadatos SEO** | Panel con meta título, meta descripción, URL canónica, Open Graph y JSON-LD |
+| **JSON completo** | Visualización del documento JSON generado |
+| **Descarga** | Botón para descargar el artículo como fichero `.json` |
+| **Multi-proveedor** | Compatible con OpenAI, Google Gemini y Ollama (según la configuración en `.env`) |
+
+> **Nota:** La interfaz web usa la misma configuración de `.env` que el modo CLI. Asegúrate de tener configuradas las variables de entorno antes de ejecutar.
 
 ---
 
