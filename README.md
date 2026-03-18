@@ -1,5 +1,9 @@
 # Publicación automática semanal con IA — Optimizado para SEO
 
+[![CI](https://github.com/juanfranciscofernandezherreros/python-openai/actions/workflows/ci.yml/badge.svg)](https://github.com/juanfranciscofernandezherreros/python-openai/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Sistema de generación y publicación automática de artículos técnicos con inteligencia artificial (OpenAI / Google Gemini), optimizado para **SEO on-page**, con datos estructurados **Schema.org**, metadatos **Open Graph** y gestión completa de **categorías**, **subcategorías** y **tags**.
 
 ---
@@ -874,7 +878,7 @@ Las siguientes capturas muestran el resultado real del sistema en funcionamiento
 
 Así se ve el fichero JSON generado por el script:
 
-![Fichero JSON generado](docs/screenshots/mongodb-document.svg)
+![Fichero JSON generado](docs/screenshots/article-document.svg)
 
 ### Página del artículo generado
 

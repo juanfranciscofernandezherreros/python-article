@@ -41,6 +41,7 @@ Gracias por tu interés en contribuir a este proyecto. A continuación se descri
   python -m pytest test_generateArticle.py test_seed_data.py -v
   ```
 - Añade tests para cualquier función nueva o modificada.
+- El pipeline de CI (`.github/workflows/ci.yml`) ejecuta automáticamente los tests en cada push y pull request contra `main` en Python 3.10, 3.11 y 3.12.
 
 ---
 
@@ -55,13 +56,18 @@ Gracias por tu interés en contribuir a este proyecto. A continuación se descri
 ## 📂 Estructura de archivos
 
 ```
-├── generateArticle.py       # Script principal (CLI, sin MongoDB)
+├── generateArticle.py       # Script principal (CLI)
 ├── seed_data.py             # Referencia de categorías/tags disponibles
 ├── test_generateArticle.py  # Tests del script principal
 ├── test_seed_data.py        # Tests de la referencia de datos
 ├── README.md                # Documentación principal (¡siempre actualizar!)
 ├── ARTICLE_GENERATION.md    # Documentación técnica detallada
 ├── CONTRIBUTING.md          # Esta guía
+├── LICENSE                  # Licencia MIT
+├── .github/
+│   ├── workflows/ci.yml     # Pipeline de CI (GitHub Actions)
+│   ├── ISSUE_TEMPLATE/      # Plantillas de issues (bug, feature)
+│   └── PULL_REQUEST_TEMPLATE.md
 ├── docs/screenshots/        # Screenshots del proyecto
 ├── k8s/                     # Manifiestos Kubernetes
 ├── gcloud/                  # Ficheros Google Cloud
