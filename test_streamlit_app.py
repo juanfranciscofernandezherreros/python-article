@@ -94,7 +94,7 @@ class TestBuildCategoryMap:
 # ──────────────────────────────────────────────────────────────────
 
 class TestInitClient:
-    """Verify AI client initialisation for each provider."""
+    """Verify AI client initialization for each provider."""
 
     @patch("streamlit_app._is_ollama_provider", return_value=True)
     @patch("streamlit_app.OpenAI")

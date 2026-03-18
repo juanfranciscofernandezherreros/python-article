@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
 # ──────────────────────────────────────────────────────────────────
 
 def _build_category_map():
-    """Return ordered dicts: categories → subcategories → tags from TAXONOMY."""
+    """Return nested dicts mapping categories → subcategories → tags from TAXONOMY."""
     cat_map: dict = {}
     for cat in TAXONOMY:
         sub_map: dict = {}
@@ -120,7 +120,12 @@ with st.sidebar:
         help="Si el título generado es demasiado similar a alguno de estos, se regenerará.",
     )
 
-    provider_label = "Ollama" if _is_ollama_provider() else ("Gemini" if _is_gemini_model(OPENAI_MODEL) else "OpenAI")
+    if _is_ollama_provider():
+        provider_label = "Ollama"
+    elif _is_gemini_model(OPENAI_MODEL):
+        provider_label = "Gemini"
+    else:
+        provider_label = "OpenAI"
     st.info(f"**Proveedor IA:** {provider_label}  \n**Modelo:** `{OPENAI_MODEL}`")
 
 # ──────────────────────────────────────────────────────────────────
