@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import difflib
 import json
 import logging
@@ -266,7 +267,14 @@ def send_notification_email(subject: str, html_body: str, text_body: str = None)
                           local_hostname="localhost") as smtp:
             smtp.ehlo()
             smtp.starttls()
-            smtp.login(SMTP_USER, SMTP_PASS)
+            try:
+                smtp.login(SMTP_USER, SMTP_PASS)
+            except UnicodeEncodeError:
+                auth = f"\0{SMTP_USER}\0{SMTP_PASS}".encode("utf-8")
+                auth_b64 = base64.b64encode(auth).decode("ascii")
+                code, resp = smtp.docmd("AUTH", f"PLAIN {auth_b64}")
+                if code != 235:
+                    raise smtplib.SMTPAuthenticationError(code, resp)
             smtp.send_message(msg)
         print(f"📧 Notificación enviada a {TO_EMAIL}: {subject}")
         return True

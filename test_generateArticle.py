@@ -432,6 +432,33 @@ class TestSendNotificationEmailUtf8:
         msg_bytes = msg.as_bytes()
         assert b"=?utf-8?" in msg_bytes.lower()
 
+    @patch("generateArticle.SMTP_HOST", "smtp.example.com")
+    @patch("generateArticle.SMTP_PORT", 587)
+    @patch("generateArticle.SMTP_USER", "user@example.com")
+    @patch("generateArticle.SMTP_PASS", "secreto-á")
+    @patch("generateArticle.FROM_EMAIL", "user@example.com")
+    @patch("generateArticle.TO_EMAIL", "dest@example.com")
+    @patch("generateArticle.smtplib.SMTP")
+    def test_login_fallback_uses_auth_plain_utf8_when_ascii_login_fails(self, mock_smtp_cls):
+        mock_smtp = MagicMock()
+        mock_smtp.login.side_effect = UnicodeEncodeError("ascii", "á", 0, 1, "ordinal not in range(128)")
+        mock_smtp.docmd.return_value = (235, b"2.7.0 Authentication successful")
+        mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_smtp)
+        mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = send_notification_email(
+            subject="Asunto con acento",
+            html_body="<p>Contenido</p>",
+            text_body="Contenido",
+        )
+
+        assert result is True
+        mock_smtp.login.assert_called_once_with("user@example.com", "secreto-á")
+        mock_smtp.docmd.assert_called_once()
+        args = mock_smtp.docmd.call_args[0]
+        assert args[0] == "AUTH"
+        assert args[1].startswith("PLAIN ")
+
 
 # ---- build_canonical_url ----
 class TestBuildCanonicalUrl:
