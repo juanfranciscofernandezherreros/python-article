@@ -62,11 +62,12 @@ _GEMINI_RECOMMENDED_MODELS = (
     "gemini-1.5-pro",
 )
 _GEMINI_RECOMMENDED_MODELS_STR = ", ".join(_GEMINI_RECOMMENDED_MODELS)
+_JSON_ERROR_PREVIEW_LENGTH = 300
 
 
 def _format_invalid_json_error(raw_text: str, err: json.JSONDecodeError) -> str:
     """Construye un mensaje accionable cuando la IA devuelve JSON malformado."""
-    preview = raw_text[:300].replace("\n", "\\n")
+    preview = raw_text[:_JSON_ERROR_PREVIEW_LENGTH].replace("\n", "\\n")
     return (
         "La IA devolvió una respuesta con JSON inválido. "
         "Suele ocurrir cuando el modelo corta o mal-escapa una cadena "
