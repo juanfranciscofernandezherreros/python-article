@@ -5,6 +5,15 @@ from utils import html_escape
 from notifications import send_notification_email
 
 
+def _sanitize_regex_for_prompt(pattern: str) -> str:
+    """Elimina saltos de línea del patrón regex antes de incluirlo en un prompt.
+
+    Los saltos de línea en el patrón podrían fragmentar la estructura del
+    prompt e inyectar instrucciones inesperadas para el modelo.
+    """
+    return pattern.replace("\r\n", r"\n").replace("\r", r"\n").replace("\n", r"\n")
+
+
 def build_generation_prompt(parent_name: str, subcat_name: str, tag_text: str | None = None, avoid_titles: list[str] | None = None, language: str = config.ARTICLE_LANGUAGE) -> str:
     avoid_titles = avoid_titles or []
     avoid_block = ""
@@ -16,10 +25,14 @@ def build_generation_prompt(parent_name: str, subcat_name: str, tag_text: str | 
         )
     lang = config._language_name(language)
     topic = f'sobre "{tag_text}" ' if tag_text else ""
+    regex_block = (
+        f'\nEl título generado debe cumplir el patrón regex: {_sanitize_regex_for_prompt(config.ARTICLE_TITLE_REGEX)}'
+        if config.ARTICLE_TITLE_REGEX else ""
+    )
     return f"""Artículo SEO en {lang} {topic}(categoría: "{parent_name}", subcategoría: "{subcat_name}").
 Devuelve SOLO JSON: {{"title":"...","summary":"...","body":"...","keywords":[...]}}
 
-title: optimizado para SEO y CTR, conciso (máx. 60 caracteres), incluye palabra clave principal al inicio.
+title: optimizado para SEO y CTR, conciso (máx. 60 caracteres), incluye palabra clave principal al inicio.{regex_block}
 summary: meta-descripción SEO (máx. 160 caracteres), incluye palabra clave, llamada a la acción implícita.
 keywords: 5-7 palabras clave SEO en minúsculas (long-tail incluidas), sin repetir el título exacto.
 body (HTML semántico bien cerrado, optimizado para SEO on-page):
@@ -49,11 +62,15 @@ def build_title_prompt(parent_name: str, subcat_name: str, tag_text: str | None 
         )
     lang = config._language_name(language)
     topic = f'para el tema "{tag_text}" ' if tag_text else ""
+    regex_block = (
+        f'\nEl título debe cumplir el patrón regex: {_sanitize_regex_for_prompt(config.ARTICLE_TITLE_REGEX)}'
+        if config.ARTICLE_TITLE_REGEX else ""
+    )
     return (
         f'Genera un título de artículo técnico en {lang} {topic}'
         f'(categoría: "{parent_name}", subcategoría: "{subcat_name}").\n'
         f"Requisitos: atractivo, conciso (máx. {config.META_TITLE_MAX_LENGTH} caracteres), "
-        f"optimizado para SEO, incluye la palabra clave principal.{avoid_block}\n"
+        f"optimizado para SEO, incluye la palabra clave principal.{avoid_block}{regex_block}\n"
         "Devuelve ÚNICAMENTE el texto del título, sin comillas ni texto adicional."
     )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from openai import OpenAI
 
@@ -141,6 +142,23 @@ def generate_title_with_ai(client_ai: OpenAI | None, parent_name: str, subcat_na
 
     return raw_text.strip().strip("\"'").strip()[:config.META_TITLE_MAX_LENGTH]
 
+
+def _title_matches_regex(title: str, pattern: str | None) -> bool:
+    """Devuelve True si el título cumple el patrón regex configurado (o si no hay patrón).
+
+    Usa ``re.search`` para que el patrón pueda referirse a cualquier parte del
+    título. Si el patrón es inválido se registra un aviso y se devuelve True
+    (sin restricción) para no bloquear la generación.
+    """
+    if not pattern:
+        return True
+    try:
+        return bool(re.search(pattern, title))
+    except re.error as exc:
+        logger.warning("ARTICLE_TITLE_REGEX '%s' no es un patrón válido: %s — se ignora.", pattern, exc)
+        return True
+
+
 def generate_and_save_article(
     client_ai: OpenAI | None,
     tag_text: str | None,
@@ -177,18 +195,24 @@ def generate_and_save_article(
         # Fase 1: Generar el artículo completo (única llamada costosa a OpenAI)
         t, s, b, kw = generate_article_with_ai(client_ai, parent_name, subcat_name, tag_text, avoid_titles=avoid_titles, language=language)
 
-        if not is_too_similar(t, avoid_titles, threshold=config.SIMILARITY_THRESHOLD_STRICT):
+        t_too_similar = is_too_similar(t, avoid_titles, threshold=config.SIMILARITY_THRESHOLD_STRICT)
+        t_regex_ok = _title_matches_regex(t, config.ARTICLE_TITLE_REGEX)
+        if not t_too_similar and t_regex_ok:
             title, summary, body, keywords = t, s, b, kw
         else:
             # Fase 2: El cuerpo del artículo es válido; sólo regenerar el título (llamadas ligeras)
-            notify("Título similar detectado", f"Intento 1/{max_attempts}: '{t}'. Regenerando sólo el título...", level="warning", always_email=True)
+            reason = "similar" if t_too_similar else "no cumple el patrón regex"
+            notify("Título inválido detectado", f"Intento 1/{max_attempts}: '{t}' ({reason}). Regenerando sólo el título...", level="warning", always_email=True)
             avoid_titles.append(t)
             for attempt in range(2, max_attempts + 1):
                 new_t = generate_title_with_ai(client_ai, parent_name, subcat_name, tag_text, avoid_titles=avoid_titles, language=language)
-                if not is_too_similar(new_t, avoid_titles, threshold=config.SIMILARITY_THRESHOLD_STRICT):
+                new_too_similar = is_too_similar(new_t, avoid_titles, threshold=config.SIMILARITY_THRESHOLD_STRICT)
+                new_regex_ok = _title_matches_regex(new_t, config.ARTICLE_TITLE_REGEX)
+                if not new_too_similar and new_regex_ok:
                     title, summary, body, keywords = new_t, s, _replace_h1(b, new_t), kw
                     break
-                notify("Título similar detectado", f"Intento {attempt}/{max_attempts}: '{new_t}'. Reintentando...", level="warning", always_email=True)
+                new_reason = "similar" if new_too_similar else "no cumple el patrón regex"
+                notify("Título inválido detectado", f"Intento {attempt}/{max_attempts}: '{new_t}' ({new_reason}). Reintentando...", level="warning", always_email=True)
                 avoid_titles.append(new_t)
 
     if not title or not body:

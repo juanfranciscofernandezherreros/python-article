@@ -27,6 +27,7 @@ from openai import OpenAI
 from config import (  # noqa: F401
     AI_PROVIDER,
     ARTICLE_LANGUAGE,
+    ARTICLE_TITLE_REGEX,
     AI_TEMPERATURE_ARTICLE,
     AI_TEMPERATURE_TITLE,
     AUTHOR_USERNAME,
@@ -105,6 +106,7 @@ from ai_providers import (  # noqa: F401
     _safe_json_loads,
 )
 from article_generator import (  # noqa: F401
+    _title_matches_regex,
     generate_and_save_article,
     generate_article_with_ai,
     generate_title_with_ai,

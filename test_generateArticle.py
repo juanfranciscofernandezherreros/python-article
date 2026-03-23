@@ -9,6 +9,7 @@ import pytest
 
 from generateArticle import (
     ARTICLE_LANGUAGE,
+    ARTICLE_TITLE_REGEX,
     GENERATION_SYSTEM_MSG,
     MAX_AVOID_TITLES_IN_PROMPT,
     MAX_TITLE_RETRIES,
@@ -26,6 +27,7 @@ from generateArticle import (
     _is_ollama_provider,
     _language_name,
     _safe_json_loads,
+    _title_matches_regex,
     as_list,
     build_canonical_url,
     build_generation_prompt,
@@ -1839,3 +1841,154 @@ class TestPromptWithoutTag:
         prompt = build_title_prompt("Spring Boot", "Lombok", None)
         assert "Spring Boot" in prompt
         assert "None" not in prompt
+
+
+# ---- _title_matches_regex ----
+class TestTitleMatchesRegex:
+    """Tests for the _title_matches_regex helper."""
+
+    def test_returns_true_when_no_pattern(self):
+        """Returns True when the pattern is None or empty."""
+        assert _title_matches_regex("Cualquier título", None) is True
+        assert _title_matches_regex("Cualquier título", "") is True
+
+    def test_returns_true_when_title_matches(self):
+        """Returns True when the title matches the regex pattern."""
+        assert _title_matches_regex("Guía de Spring Boot", r"Spring Boot") is True
+        assert _title_matches_regex("Cómo usar Docker", r"^Cómo") is True
+
+    def test_returns_false_when_title_does_not_match(self):
+        """Returns False when the title does not match the regex pattern."""
+        assert _title_matches_regex("Introducción a Python", r"^Guía") is False
+        assert _title_matches_regex("Spring Boot en Java", r"^\d") is False
+
+    def test_returns_true_on_invalid_regex(self):
+        """Returns True (and logs a warning) when the regex pattern is invalid."""
+        assert _title_matches_regex("Cualquier título", r"[invalid(") is True
+
+    def test_case_sensitive_match(self):
+        """Regex matching is case-sensitive by default."""
+        assert _title_matches_regex("guía de java", r"^Guía") is False
+        assert _title_matches_regex("Guía de Java", r"^Guía") is True
+
+
+# ---- ARTICLE_TITLE_REGEX in prompts ----
+class TestPromptWithTitleRegex:
+    """Tests for the regex constraint included in prompts when ARTICLE_TITLE_REGEX is set."""
+
+    @patch("config.ARTICLE_TITLE_REGEX", r"^Guía")
+    def test_generation_prompt_includes_regex(self):
+        """build_generation_prompt includes the regex pattern when ARTICLE_TITLE_REGEX is set."""
+        prompt = build_generation_prompt("Java", "Spring Boot", "Spring Boot Core")
+        assert r"^Guía" in prompt
+
+    @patch("config.ARTICLE_TITLE_REGEX", "")
+    def test_generation_prompt_no_regex_block_when_empty(self):
+        """build_generation_prompt does not include regex block when ARTICLE_TITLE_REGEX is empty."""
+        prompt = build_generation_prompt("Java", "Spring Boot", "Spring Boot Core")
+        assert "patrón regex" not in prompt
+
+    @patch("config.ARTICLE_TITLE_REGEX", r"^Guía")
+    def test_title_prompt_includes_regex(self):
+        """build_title_prompt includes the regex pattern when ARTICLE_TITLE_REGEX is set."""
+        prompt = build_title_prompt("Java", "Spring Boot", "Spring Boot Core")
+        assert r"^Guía" in prompt
+
+    @patch("config.ARTICLE_TITLE_REGEX", "")
+    def test_title_prompt_no_regex_block_when_empty(self):
+        """build_title_prompt does not include regex block when ARTICLE_TITLE_REGEX is empty."""
+        prompt = build_title_prompt("Java", "Spring Boot", "Spring Boot Core")
+        assert "patrón regex" not in prompt
+
+
+# ---- generate_and_save_article: regex validation ----
+_VALID_JSON_MATCHING = json.dumps({
+    "title": "Guía de Spring Boot",
+    "summary": "Introducción a Spring Boot.",
+    "body": "<h1>Guía de Spring Boot</h1><p>Contenido.</p>",
+    "keywords": ["spring boot", "java"],
+})
+_VALID_JSON_NOT_MATCHING = json.dumps({
+    "title": "Introducción a Docker",
+    "summary": "Aprende Docker.",
+    "body": "<h1>Introducción a Docker</h1><p>Contenido.</p>",
+    "keywords": ["docker"],
+})
+
+
+class TestGenerateAndSaveArticleRegex:
+    """Tests for regex validation in generate_and_save_article."""
+
+    @patch("config.ARTICLE_TITLE_REGEX", r"^Guía")
+    @patch("article_generator._generate_with_langchain", return_value=_VALID_JSON_MATCHING)
+    def test_accepts_title_matching_regex(self, mock_lc):
+        """generate_and_save_article succeeds when the generated title matches ARTICLE_TITLE_REGEX."""
+        mock_client = MagicMock()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        try:
+            result = generate_and_save_article(
+                mock_client, "Spring Boot", "Java", "Spring Boot Core",
+                output_path=path,
+            )
+            assert result is True
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            assert doc["title"] == "Guía de Spring Boot"
+        finally:
+            os.unlink(path)
+
+    @patch("config.ARTICLE_TITLE_REGEX", r"^Guía")
+    @patch("article_generator.generate_title_with_ai", return_value="Guía de Kubernetes")
+    @patch("article_generator._generate_with_langchain", return_value=_VALID_JSON_NOT_MATCHING)
+    def test_regenerates_title_when_not_matching_regex(self, mock_lc, mock_gen_title):
+        """generate_and_save_article regenerates the title when it does not match ARTICLE_TITLE_REGEX."""
+        mock_client = MagicMock()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        try:
+            result = generate_and_save_article(
+                mock_client, "Spring Boot", "Java", "Spring Boot Core",
+                output_path=path,
+            )
+            assert result is True
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            # The regenerated title starts with "Guía" so it matches ^Guía
+            assert doc["title"].startswith("Guía")
+            mock_gen_title.assert_called_once()
+        finally:
+            os.unlink(path)
+
+    @patch("config.ARTICLE_TITLE_REGEX", r"^Guía")
+    @patch("article_generator.generate_title_with_ai", return_value="Introducción a Kubernetes")
+    @patch("article_generator._generate_with_langchain", return_value=_VALID_JSON_NOT_MATCHING)
+    def test_returns_false_when_all_retries_fail_regex(self, mock_lc, mock_gen_title):
+        """generate_and_save_article returns False when no retry produces a title matching the regex."""
+        mock_client = MagicMock()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        try:
+            result = generate_and_save_article(
+                mock_client, "Spring Boot", "Java", "Spring Boot Core",
+                output_path=path,
+            )
+            assert result is False
+        finally:
+            os.unlink(path)
+
+    @patch("config.ARTICLE_TITLE_REGEX", "")
+    @patch("article_generator._generate_with_langchain", return_value=_VALID_JSON_NOT_MATCHING)
+    def test_no_regex_constraint_accepts_any_title(self, mock_lc):
+        """generate_and_save_article accepts any title when ARTICLE_TITLE_REGEX is empty."""
+        mock_client = MagicMock()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            path = tmp.name
+        try:
+            result = generate_and_save_article(
+                mock_client, "Spring Boot", "Java", "Spring Boot Core",
+                output_path=path,
+            )
+            assert result is True
+        finally:
+            os.unlink(path)

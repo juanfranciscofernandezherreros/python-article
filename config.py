@@ -40,6 +40,8 @@ NOTIFY_VERBOSE = (os.getenv("NOTIFY_VERBOSE", "true").lower() in ("1","true","ye
 SEND_PROMPT_EMAIL = (os.getenv("SEND_PROMPT_EMAIL", "false").lower() in ("1", "true", "yes", "y"))
 # Idioma por defecto para los artículos generados (código ISO 639-1, p. ej. "es", "en", "fr")
 ARTICLE_LANGUAGE = os.getenv("ARTICLE_LANGUAGE", "es")
+# Patrón regex que debe cumplir el título generado (vacío = sin restricción)
+ARTICLE_TITLE_REGEX = os.getenv("ARTICLE_TITLE_REGEX", "")
 # Temperature para la generación de artículos y títulos (0.0 – 1.0)
 AI_TEMPERATURE_ARTICLE = float(os.getenv("AI_TEMPERATURE_ARTICLE", "0.7"))
 AI_TEMPERATURE_TITLE   = float(os.getenv("AI_TEMPERATURE_TITLE",   "0.9"))
