@@ -1849,11 +1849,11 @@ class TestMainCli:
     @patch("generateArticle.OPENAIAPIKEY", "fake-key")
     @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
     def test_main_title_default_is_none(self, mock_openai_cls, mock_gen):
-        """main() must pass title=None when --title is not provided."""
+        """main() must pass title=None when --title is not provided and ARTICLE_TITLE is not set."""
         import sys
 
         from generateArticle import main
-        with patch.object(sys, "argv", [
+        with patch("generateArticle.ARTICLE_TITLE", None), patch.object(sys, "argv", [
             "generateArticle.py",
             "--category", "Spring Boot",
             "--tag", "Lombok",
@@ -1861,6 +1861,43 @@ class TestMainCli:
             main()
         _, kwargs = mock_gen.call_args
         assert kwargs["title"] is None
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_main_uses_article_title_env_var(self, mock_openai_cls, mock_gen):
+        """main() must use ARTICLE_TITLE env var as default title when --title is not provided."""
+        import sys
+
+        from generateArticle import main
+        with patch("generateArticle.ARTICLE_TITLE", "Título desde Entorno"), patch.object(sys, "argv", [
+            "generateArticle.py",
+            "--category", "Spring Boot",
+            "--tag", "Lombok",
+        ]):
+            main()
+        _, kwargs = mock_gen.call_args
+        assert kwargs["title"] == "Título desde Entorno"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_main_cli_title_overrides_env_var(self, mock_openai_cls, mock_gen):
+        """main() must use --title CLI arg even when ARTICLE_TITLE env var is set."""
+        import sys
+
+        from generateArticle import main
+        with patch("generateArticle.ARTICLE_TITLE", "Título desde Entorno"), patch.object(sys, "argv", [
+            "generateArticle.py",
+            "--category", "Spring Boot",
+            "--tag", "Lombok",
+            "--title", "Título CLI",
+        ]):
+            main()
+        _, kwargs = mock_gen.call_args
+        assert kwargs["title"] == "Título CLI"
 
     @patch("generateArticle.generate_and_save_article", return_value=True)
     @patch("generateArticle.OpenAI")

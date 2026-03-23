@@ -65,6 +65,7 @@ El script carga su configuración desde un fichero `.env` en el mismo directorio
 | `SEND_EMAILS` | ❌ | Si es `true` (por defecto), se envían emails; si es `false`, solo se imprime en consola |
 | `NOTIFY_VERBOSE` | ❌ | Si es `true` (por defecto), envía email en cada evento; si es `false`, solo en errores/avisos |
 | `SEND_PROMPT_EMAIL` | ❌ | Si es `true`, envía por email el prompt antes de llamar a la IA |
+| `ARTICLE_TITLE` | ❌ | Título predefinido del artículo. Si se establece, se usa directamente sin generar uno con IA. Puede sobreescribirse con `--title` |
 
 ### Argumentos CLI
 
@@ -79,6 +80,7 @@ El script acepta los siguientes argumentos CLI (todos sobreescriben las variable
 | `--username` / `--author` / `-u` / `-a` | ❌ | `AUTHOR_USERNAME` | Username/nombre del autor (`--author` y `-a` son alias para compatibilidad) |
 | `--site` / `-S` | ❌ | `SITE` | URL base del sitio |
 | `--language` / `-l` | ❌ | `ARTICLE_LANGUAGE` | Código de idioma ISO 639-1 |
+| `--title` / `-T` | ❌ | `ARTICLE_TITLE` | Título del artículo. Si se omite y `ARTICLE_TITLE` no está definida, se genera con IA |
 | `--avoid-titles` | ❌ | `""` | Títulos a evitar, separados por `;` |
 
 ---

@@ -27,6 +27,7 @@ from openai import OpenAI
 from config import (  # noqa: F401
     AI_PROVIDER,
     ARTICLE_LANGUAGE,
+    ARTICLE_TITLE,
     AI_TEMPERATURE_ARTICLE,
     AI_TEMPERATURE_TITLE,
     AUTHOR_USERNAME,
@@ -136,8 +137,8 @@ def main():
                         help="URL base del sitio para URLs canónicas (p. ej. https://myblog.com), también configurable con SITE en .env")
     parser.add_argument("--language", "-l", default=ARTICLE_LANGUAGE,
                         help="Código de idioma ISO 639-1 (p. ej. es, en, fr)")
-    parser.add_argument("--title", "-T", default=None,
-                        help="Título del artículo (si se omite, se genera con IA)")
+    parser.add_argument("--title", "-T", default=ARTICLE_TITLE,
+                        help="Título del artículo (si se omite, se usa ARTICLE_TITLE del entorno o se genera con IA)")
     parser.add_argument("--provider", "-p",
                         choices=["auto", "openai", "gemini", "ollama"],
                         default=None,
