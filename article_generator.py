@@ -62,6 +62,18 @@ _GEMINI_RECOMMENDED_MODELS = (
     "gemini-1.5-pro",
 )
 _GEMINI_RECOMMENDED_MODELS_STR = ", ".join(_GEMINI_RECOMMENDED_MODELS)
+_JSON_ERROR_PREVIEW_LENGTH = 300
+
+
+def _format_invalid_json_error(raw_text: str, err: json.JSONDecodeError) -> str:
+    """Construye un mensaje accionable cuando la IA devuelve JSON malformado."""
+    preview = raw_text[:_JSON_ERROR_PREVIEW_LENGTH].replace("\n", "\\n")
+    return (
+        "La IA devolvió una respuesta con JSON inválido. "
+        "Suele ocurrir cuando el modelo corta o mal-escapa una cadena "
+        f"(detalle: {err.msg} en línea {err.lineno}, columna {err.colno}). "
+        f"Respuesta recibida (preview): {preview}"
+    )
 
 
 def _format_gemini_langchain_error(prefix: str, err: Exception) -> str:
@@ -190,7 +202,10 @@ def generate_article_with_ai(client_ai: BaseChatModel | None, parent_name: str, 
         raise RuntimeError("El modelo no devolvió contenido.")
 
     json_text = _extract_json_block(raw_text)
-    data = _safe_json_loads(json_text)
+    try:
+        data = _safe_json_loads(json_text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(_format_invalid_json_error(json_text, e)) from e
 
     title = str(data.get("title", "")).strip()
     summary = str(data.get("summary", "")).strip()
