@@ -1958,14 +1958,14 @@ class TestMainCli:
     @patch("generateArticle.OPENAIAPIKEY", "fake-key")
     @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
     def test_main_category_is_required(self, mock_openai_cls, mock_gen):
-        """main() must exit with error when --category is not provided."""
+        """main() must exit with error when --category is not provided (and no --batch)."""
         import sys
 
         from generateArticle import main
         with patch.object(sys, "argv", ["generateArticle.py", "--tag", "Lombok"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
-        assert exc_info.value.code == 2  # argparse exits with code 2 for missing required args
+        assert exc_info.value.code == 2  # parser.error() exits with code 2
 
     @patch("generateArticle.generate_and_save_article", return_value=True)
     @patch("generateArticle.OpenAI")
@@ -2009,3 +2009,309 @@ class TestPromptWithoutTag:
         prompt = build_title_prompt("Spring Boot", "Lombok", None)
         assert "Spring Boot" in prompt
         assert "None" not in prompt
+
+
+# ---- CLI: main() batch mode ----
+class TestMainCliBatch:
+    """Tests for the --batch argument in main()."""
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_runs_all_jobs(self, mock_openai_cls, mock_gen):
+        """--batch must call generate_and_save_article once per job in the file."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [
+            {"category": "Spring Boot", "tag": "JWT", "output": "/tmp/art1.json"},
+            {"category": "Spring Boot", "tag": "OAuth2", "output": "/tmp/art2.json"},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", ["generateArticle.py", "--batch", batch_path]):
+                main()
+        finally:
+            os.unlink(batch_path)
+        assert mock_gen.call_count == 2
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_passes_correct_tag_and_category(self, mock_openai_cls, mock_gen):
+        """Each job's tag and category must be forwarded to generate_and_save_article."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [
+            {"category": "Spring Boot", "tag": "JWT", "output": "/tmp/jwt.json"},
+            {"category": "Django", "tag": "REST API", "output": "/tmp/rest.json"},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", ["generateArticle.py", "--batch", batch_path]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        calls = mock_gen.call_args_list
+        assert calls[0][1]["tag_text"] == "JWT"
+        assert calls[0][1]["parent_name"] == "Spring Boot"
+        assert calls[1][1]["tag_text"] == "REST API"
+        assert calls[1][1]["parent_name"] == "Django"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_auto_generates_output_filename_when_omitted(self, mock_openai_cls, mock_gen):
+        """When a batch job omits 'output', the filename must default to article_{idx}.json."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [
+            {"category": "Spring Boot", "tag": "JWT"},
+            {"category": "Spring Boot", "tag": "OAuth2"},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", ["generateArticle.py", "--batch", batch_path]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        calls = mock_gen.call_args_list
+        assert calls[0][1]["output_path"] == "article_1.json"
+        assert calls[1][1]["output_path"] == "article_2.json"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_uses_cli_language_as_default(self, mock_openai_cls, mock_gen):
+        """CLI --language must be used as fallback for batch jobs that omit 'language'."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [{"category": "Spring Boot", "tag": "JWT"}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path, "--language", "en",
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["language"] == "en"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_job_language_overrides_cli_default(self, mock_openai_cls, mock_gen):
+        """A 'language' field in a batch job must override the CLI --language default."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [{"category": "Spring Boot", "tag": "JWT", "language": "fr"}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path, "--language", "en",
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["language"] == "fr"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_cli_category_is_fallback_for_jobs_without_category(self, mock_openai_cls, mock_gen):
+        """--category on the CLI must be used as fallback for batch jobs that omit 'category'."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [{"tag": "JWT"}]  # no category in job entry
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path, "--category", "Spring Boot",
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        _, kwargs = mock_gen.call_args
+        assert kwargs["parent_name"] == "Spring Boot"
+
+    def test_batch_exits_when_file_not_found(self):
+        """main() must exit with code 1 when the batch file does not exist."""
+        import sys
+
+        from generateArticle import main
+        with patch("generateArticle.OPENAIAPIKEY", "fake-key"), \
+             patch("generateArticle.OPENAI_MODEL", "gpt-4o"), \
+             patch("generateArticle.OpenAI"):
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", "/tmp/nonexistent_batch_xyz.json",
+            ]):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 1
+
+    def test_batch_exits_when_json_is_invalid(self):
+        """main() must exit with code 1 when the batch file contains invalid JSON."""
+        import sys
+
+        from generateArticle import main
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            f.write("this is not valid json {{{")
+            batch_path = f.name
+        try:
+            with patch("generateArticle.OPENAIAPIKEY", "fake-key"), \
+                 patch("generateArticle.OPENAI_MODEL", "gpt-4o"), \
+                 patch("generateArticle.OpenAI"):
+                with patch.object(sys, "argv", [
+                    "generateArticle.py", "--batch", batch_path,
+                ]):
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+        finally:
+            os.unlink(batch_path)
+        assert exc_info.value.code == 1
+
+    def test_batch_exits_when_json_is_not_a_list(self):
+        """main() must exit with code 1 when the batch file is a JSON object, not a list."""
+        import sys
+
+        from generateArticle import main
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump({"category": "Spring Boot"}, f)
+            batch_path = f.name
+        try:
+            with patch("generateArticle.OPENAIAPIKEY", "fake-key"), \
+                 patch("generateArticle.OPENAI_MODEL", "gpt-4o"), \
+                 patch("generateArticle.OpenAI"):
+                with patch.object(sys, "argv", [
+                    "generateArticle.py", "--batch", batch_path,
+                ]):
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+        finally:
+            os.unlink(batch_path)
+        assert exc_info.value.code == 1
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_skips_job_missing_category(self, mock_openai_cls, mock_gen):
+        """A batch job with no 'category' (and no CLI --category fallback) must be skipped."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [
+            {"tag": "JWT"},  # no category here, no CLI fallback
+            {"category": "Spring Boot", "tag": "OAuth2"},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path,
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        # Only the second job (with category) should have been executed
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs["parent_name"] == "Spring Boot"
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_batch_parses_avoid_titles_in_job(self, mock_openai_cls, mock_gen):
+        """avoid_titles in a batch job entry must be split on semicolons."""
+        import sys
+
+        from generateArticle import main
+
+        jobs = [{"category": "Spring Boot", "tag": "JWT", "avoid_titles": "TitleA;TitleB"}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(jobs, f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path,
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+
+        _, kwargs = mock_gen.call_args
+        assert "TitleA" in kwargs["avoid_titles"]
+        assert "TitleB" in kwargs["avoid_titles"]
+
+    @patch("generateArticle.generate_and_save_article", return_value=True)
+    @patch("generateArticle.OpenAI")
+    @patch("generateArticle.OPENAIAPIKEY", "fake-key")
+    @patch("generateArticle.OPENAI_MODEL", "gpt-4o")
+    def test_empty_batch_file_does_not_call_generate(self, mock_openai_cls, mock_gen):
+        """An empty batch file (empty list) must not call generate_and_save_article."""
+        import sys
+
+        from generateArticle import main
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump([], f)
+            batch_path = f.name
+        try:
+            with patch.object(sys, "argv", [
+                "generateArticle.py", "--batch", batch_path,
+            ]):
+                main()
+        finally:
+            os.unlink(batch_path)
+        mock_gen.assert_not_called()
+
+    def test_main_category_is_required_without_batch(self):
+        """main() must exit with code 2 when neither --category nor --batch is provided."""
+        import sys
+
+        from generateArticle import main
+        with patch("generateArticle.OPENAIAPIKEY", "fake-key"), \
+             patch("generateArticle.OPENAI_MODEL", "gpt-4o"):
+            with patch.object(sys, "argv", ["generateArticle.py", "--tag", "Lombok"]):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 2

@@ -86,7 +86,8 @@ El script acepta los siguientes argumentos CLI (todos sobreescriben las variable
 
 | Argumento | Obligatorio | Por defecto | Descripción |
 |---|---|---|---|
-| `--category` / `-c` | ✅ | — | Nombre de la categoría padre |
+| `--category` / `-c` | ✅\* | — | Nombre de la categoría padre |
+| `--batch` / `-b` | ❌ | — | Ruta a un fichero JSON con múltiples trabajos (ver [Modo por lotes](#modo-por-lotes)) |
 | `--tag` / `-t` | ❌ | — | Tema o tag del artículo |
 | `--subcategory` / `-s` | ❌ | `General` | Nombre de la subcategoría |
 | `--output` / `-o` | ❌ | `article.json` | Ruta del fichero JSON de salida |
@@ -96,6 +97,41 @@ El script acepta los siguientes argumentos CLI (todos sobreescriben las variable
 | `--title` / `-T` | ❌ | — | Título del artículo (si se omite, se genera con IA) |
 | `--provider` / `-p` | ❌ | `AI_PROVIDER` | Proveedor de IA: `auto`, `openai`, `gemini` u `ollama` |
 | `--avoid-titles` | ❌ | `""` | Títulos a evitar, separados por `;` |
+
+> \* `--category` es obligatorio en el modo normal. En modo `--batch` puede omitirse de la línea de comandos si cada trabajo del fichero incluye su propio campo `category`.
+
+### Modo por lotes
+
+El argumento `--batch` permite enviar **múltiples trabajos en una sola invocación**; el script los ejecuta de forma secuencial:
+
+```bash
+python3 generateArticle.py --batch jobs.json --language es
+```
+
+El fichero de lote es un **array JSON**. Cada entrada admite los mismos campos que los argumentos CLI. Los argumentos de la línea de comandos actúan como valores por defecto para los campos omitidos en cada trabajo. Si un trabajo omite `output`, el fichero de salida se genera como `article_{n}.json` (índice 1-based).
+
+```json
+[
+  {
+    "tag": "JWT Authentication",
+    "category": "Spring Boot",
+    "subcategory": "Spring Security",
+    "output": "jwt-article.json"
+  },
+  {
+    "tag": "OAuth2 with Spring Security",
+    "category": "Spring Boot",
+    "subcategory": "Spring Security",
+    "output": "oauth2-article.json"
+  },
+  {
+    "tag": "Spring Boot Actuator",
+    "category": "Spring Boot"
+  }
+]
+```
+
+Campos soportados por trabajo: `tag`, `category`, `subcategory`, `output`, `username`, `site`, `language`, `title`, `avoid_titles`, `provider`.
 
 ---
 

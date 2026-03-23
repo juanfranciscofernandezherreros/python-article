@@ -130,7 +130,8 @@ python3 generateArticle.py \
 
 | Argumento | Obligatorio | Descripción | Por defecto |
 |---|---|---|---|
-| `--category` / `-c` | ✅ | Nombre de la categoría padre | — |
+| `--category` / `-c` | ✅\* | Nombre de la categoría padre | — |
+| `--batch` / `-b` | ❌ | Ruta a un fichero JSON con múltiples trabajos (ver [Modo por lotes](#modo-por-lotes)) | — |
 | `--tag` / `-t` | ❌ | Tema o tag del artículo | — |
 | `--subcategory` / `-s` | ❌ | Nombre de la subcategoría | `General` |
 | `--output` / `-o` | ❌ | Ruta del fichero JSON de salida | `article.json` |
@@ -141,12 +142,47 @@ python3 generateArticle.py \
 | `--provider` / `-p` | ❌ | Proveedor de IA: `auto`, `openai`, `gemini` u `ollama` | valor de `AI_PROVIDER` |
 | `--avoid-titles` | ❌ | Títulos a evitar (separados por `;`). El script compara el nuevo título con esta lista y regenera si la similitud supera el umbral 0.86 | `""` |
 
+> \* `--category` es obligatorio en el modo normal. En modo `--batch` puede omitirse en la línea de comandos si cada trabajo del fichero incluye su propio campo `category`.
+
 El script:
 1. Valida la configuración (clave de API disponible).
 2. Genera el artículo con IA (OpenAI o Google Gemini, optimizado para SEO).
 3. Genera metadatos SEO: `metaTitle`, `metaDescription`, `canonicalUrl`, datos estructurados JSON-LD y Open Graph.
 4. Guarda el documento completo en el fichero JSON indicado por `--output`.
 5. Notifica el resultado por correo (si hay SMTP configurado).
+
+#### Modo por lotes
+
+Pasa `--batch <fichero.json>` para ejecutar múltiples generaciones de forma secuencial en una sola invocación:
+
+```bash
+python3 generateArticle.py --batch jobs.json --language es
+```
+
+El fichero de lote es un **array JSON** donde cada entrada admite los mismos campos que los argumentos CLI. Los argumentos de la línea de comandos actúan como valores por defecto para los campos omitidos en cada trabajo. Si un trabajo omite `output`, el fichero de salida se genera automáticamente como `article_{n}.json`.
+
+```json
+[
+  {
+    "tag": "JWT Authentication",
+    "category": "Spring Boot",
+    "subcategory": "Spring Security",
+    "output": "jwt-article.json"
+  },
+  {
+    "tag": "OAuth2 with Spring Security",
+    "category": "Spring Boot",
+    "subcategory": "Spring Security",
+    "output": "oauth2-article.json"
+  },
+  {
+    "tag": "Spring Boot Actuator",
+    "category": "Spring Boot"
+  }
+]
+```
+
+> ℹ️ El campo `language` global de CLI se aplica a todos los trabajos que no lo especifiquen. Cada trabajo puede sobreescribir cualquier campo, incluido `provider`.
 
 ### 5. Ejecutar los tests
 
