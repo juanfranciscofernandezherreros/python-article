@@ -62,11 +62,10 @@ _GEMINI_RECOMMENDED_MODELS = (
     "gemini-1.5-pro",
 )
 _GEMINI_RECOMMENDED_MODELS_STR = ", ".join(_GEMINI_RECOMMENDED_MODELS)
-_JSON_ERROR_PREVIEW_LENGTH = 300
 _MAX_GEMINI_JSON_PARSE_ATTEMPTS = 3
 
 
-def _format_invalid_json_error(raw_text: str, err: json.JSONDecodeError) -> str:
+def _format_invalid_json_error(err: json.JSONDecodeError) -> str:
     """Construye un mensaje accionable cuando la IA devuelve JSON malformado."""
     return (
         "La IA devolvió una respuesta con JSON inválido. "
@@ -213,7 +212,7 @@ def generate_article_with_ai(client_ai: BaseChatModel | None, parent_name: str, 
             break
         except json.JSONDecodeError as e:
             if parse_attempt == max_json_parse_attempts:
-                raise RuntimeError(_format_invalid_json_error(json_text, e)) from e
+                raise RuntimeError(_format_invalid_json_error(e)) from e
             logger.warning(
                 "La IA devolvió JSON inválido al generar artículo; reintentando (%d/%d).",
                 parse_attempt,
