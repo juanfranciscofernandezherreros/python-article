@@ -137,6 +137,7 @@ python3 generateArticle.py \
 | `--site` / `-S` | ❌ | URL base del sitio para URLs canónicas | valor de `SITE` |
 | `--language` / `-l` | ❌ | Código de idioma ISO 639-1 (`es`, `en`, `fr`…) | valor de `ARTICLE_LANGUAGE` |
 | `--title` / `-T` | ❌ | Título del artículo (si se omite, se genera con IA) | — |
+| `--provider` / `-p` | ❌ | Proveedor de IA: `auto`, `openai`, `gemini` u `ollama` | valor de `AI_PROVIDER` |
 | `--avoid-titles` | ❌ | Títulos a evitar (separados por `;`). El script compara el nuevo título con esta lista y regenera si la similitud supera el umbral 0.86 | `""` |
 
 El script:
@@ -1201,7 +1202,7 @@ ruff format .
 
 | Acción | Descripción |
 |--------|--------------|
-| 📥 Recibir el tema por CLI | `--tag`, `--category`, `--subcategory` pasados como argumentos al ejecutar |
+| 📥 Recibir el tema por CLI | `--tag`, `--category`, `--subcategory`, `--title` pasados como argumentos al ejecutar |
 | ✍️ Generar artículo con IA (SEO) | Escribe título, resumen, cuerpo HTML y keywords optimizados para SEO |
 | 🏷️ Generar metadatos SEO | `metaTitle`, `metaDescription`, `canonicalUrl`, JSON-LD, Open Graph |
 | 🚫 Evitar repeticiones | No repite títulos similares (umbral 0.86) — usa `--avoid-titles` para pasar títulos existentes |
