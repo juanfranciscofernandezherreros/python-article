@@ -61,10 +61,19 @@ _GEMINI_RECOMMENDED_MODELS = (
     "gemini-1.5-flash",
     "gemini-1.5-pro",
 )
+_GEMINI_RECOMMENDED_MODELS_STR = ", ".join(_GEMINI_RECOMMENDED_MODELS)
 
 
 def _format_gemini_langchain_error(prefix: str, err: Exception) -> str:
-    """Devuelve un mensaje de error accionable para fallos de LangChain con Gemini."""
+    """Devuelve un mensaje de error accionable para fallos de LangChain con Gemini.
+
+    Args:
+        prefix: Prefijo base del mensaje de error.
+        err: Excepción capturada al invocar LangChain.
+
+    Returns:
+        Mensaje de error formateado con guía accionable para el usuario.
+    """
     raw_msg = str(err)
     lower_msg = raw_msg.lower()
     if (
@@ -72,11 +81,10 @@ def _format_gemini_langchain_error(prefix: str, err: Exception) -> str:
         or "api key not valid" in lower_msg
         or "invalid api key" in lower_msg
     ):
-        models = ", ".join(_GEMINI_RECOMMENDED_MODELS)
         return (
             f"{prefix}: GEMINI_API_KEY no es válida. "
             f"Este proyecto usa LangChain para Gemini. "
-            f"Modelos recomendados: {models}. "
+            f"Modelos recomendados: {_GEMINI_RECOMMENDED_MODELS_STR}. "
             f"Error original: {raw_msg}"
         )
     return f"{prefix}: {raw_msg}"
