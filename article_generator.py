@@ -96,7 +96,12 @@ def _invoke_chat_model(client_ai: BaseChatModel, system_msg: str, user_prompt: s
         ("system", system_msg),
         ("human", user_prompt),
     ])
-    content = getattr(response, "content", response)
+    if isinstance(response, str):
+        return response
+    if not hasattr(response, "content"):
+        raise RuntimeError("El cliente de chat no devolvió un mensaje compatible con contenido textual.")
+
+    content = response.content
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -106,7 +111,12 @@ def _invoke_chat_model(client_ai: BaseChatModel, system_msg: str, user_prompt: s
                 parts.append(str(part.get("text", "")))
             else:
                 parts.append(str(part))
-        return "\n".join(parts).strip()
+        text = "\n".join(parts).strip()
+        if not text:
+            raise RuntimeError("El cliente de chat devolvió contenido vacío.")
+        return text
+    if content is None:
+        raise RuntimeError("El cliente de chat devolvió contenido vacío.")
     return str(content)
 
 
