@@ -957,6 +957,20 @@ class TestGenerateArticleWithAILangchain:
         with pytest.raises(RuntimeError, match=r"JSON inválido.*Unterminated string.*columna"):
             generate_article_with_ai(mock_client, "Cat", "Sub", "Tag")
 
+    @patch("article_generator._generate_with_langchain", side_effect=[
+        '{"title":"JWT","summary":"x","body":"<p>Texto sin cierre',
+        _VALID_ARTICLE_JSON,
+    ])
+    def test_retries_once_when_model_returns_invalid_json_then_succeeds(self, mock_lc):
+        """If first response has malformed JSON, generation retries and succeeds."""
+        mock_client = MagicMock()
+        title, summary, body, keywords = generate_article_with_ai(mock_client, "Cat", "Sub", "Tag")
+        assert title == "Cómo usar Spring Boot"
+        assert summary == "Guía completa de Spring Boot."
+        assert "<h1>" in body
+        assert "spring boot" in keywords
+        assert mock_lc.call_count == 2
+
     @patch("article_generator.build_generation_prompt")
     @patch("article_generator._generate_with_langchain", return_value=_VALID_ARTICLE_JSON)
     def test_title_passed_to_prompt_builder(self, mock_lc, mock_prompt):
