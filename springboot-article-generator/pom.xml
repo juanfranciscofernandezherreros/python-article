@@ -7,7 +7,7 @@
 
     <groupId>com.github.juanfernandez</groupId>
     <artifactId>article-generator-spring-boot-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>Article Generator Spring Boot Starter</name>
