@@ -1,19 +1,23 @@
-package com.github.juanfernandez.article.service;
+package com.github.juanfernandez.article.pregunta.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.github.juanfernandez.article.model.Pregunta;
-import com.github.juanfernandez.article.repository.PreguntaRepository;
+import com.github.juanfernandez.article.pregunta.domain.Pregunta;
+import com.github.juanfernandez.article.pregunta.port.in.PreguntaGeneratorPort;
+import com.github.juanfernandez.article.pregunta.port.out.PreguntaRepositoryPort;
+import com.github.juanfernandez.article.shared.ai.port.AiPort;
+import com.github.juanfernandez.article.shared.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
- * Service that reads all existing questions from the {@code preguntas} PostgreSQL table,
- * uses the configured AI provider to generate a new unique multilingual question
+ * Application service that implements the {@link PreguntaGeneratorPort} use case.
+ *
+ * <p>Reads all existing questions from the {@code preguntas} table via {@link PreguntaRepositoryPort},
+ * uses the configured AI provider via {@link AiPort} to generate a new unique multilingual question
  * (Catalan, English, Spanish, French), and persists it.
  *
  * <p>The AI is asked to return a JSON object with the following structure:
@@ -32,17 +36,12 @@ import java.util.Optional;
  * <p>Example usage from a consuming Spring Boot application:
  * <pre>{@code
  * @Autowired
- * private PreguntaGeneratorService preguntaGeneratorService;
+ * private PreguntaGeneratorPort preguntaGeneratorPort;
  *
- * // Generate and save a new question
- * Pregunta nueva = preguntaGeneratorService.generateAndSave();
+ * Pregunta nueva = preguntaGeneratorPort.generateAndSave();
  * }</pre>
- *
- * <p>This bean is only registered when both {@code spring-boot-starter-data-jpa}
- * and a {@link PreguntaRepository} are on the classpath (conditional on
- * {@code @ConditionalOnBean(PreguntaRepository.class)} in the auto-configuration).
  */
-public class PreguntaGeneratorService {
+public class PreguntaGeneratorService implements PreguntaGeneratorPort {
 
     private static final Logger log = LoggerFactory.getLogger(PreguntaGeneratorService.class);
 
@@ -64,38 +63,32 @@ public class PreguntaGeneratorService {
             + "  }\n"
             + "}";
 
-    private final AiClientService aiClient;
-    private final PreguntaRepository preguntaRepository;
+    private final AiPort aiPort;
+    private final JsonUtils jsonUtils;
+    private final PreguntaRepositoryPort preguntaRepository;
 
-    public PreguntaGeneratorService(AiClientService aiClient,
-                                    PreguntaRepository preguntaRepository) {
-        this.aiClient           = aiClient;
+    public PreguntaGeneratorService(AiPort aiPort, PreguntaRepositoryPort preguntaRepository,
+                                     JsonUtils jsonUtils) {
+        this.aiPort = aiPort;
+        this.jsonUtils = jsonUtils;
         this.preguntaRepository = preguntaRepository;
     }
 
-    // ── Public API ────────────────────────────────────────────────────────
+    // ── PreguntaGeneratorPort implementation ──────────────────────────────
 
     /**
-     * Fetches all questions from the database, asks the AI to generate a new one that does not
-     * already exist, saves it, and returns the persisted {@link Pregunta}.
-     *
-     * <p>The new question is assigned {@code orden = max(orden) + 1}. If the table is empty
-     * the question receives {@code orden = 1}.
-     *
-     * @return the newly created and persisted {@link Pregunta}
-     * @throws RuntimeException if the AI returns an invalid or empty response
-     * @throws RuntimeException if the AI generates a {@code campo} that already exists in the database
-     * @throws RuntimeException if the AI omits any of the required language keys (ca, en, es, fr)
+     * {@inheritDoc}
      */
+    @Override
     public Pregunta generateAndSave() {
         List<Pregunta> existing = preguntaRepository.findAllByOrderByOrdenAsc();
         log.info("Generating new question. Existing questions in DB: {}", existing.size());
 
         String prompt = buildPrompt(existing);
 
-        String rawResponse = aiClient.generate(SYSTEM_MSG, prompt, 400, 0.8);
-        String jsonBlock   = aiClient.extractJsonBlock(rawResponse);
-        JsonNode data      = aiClient.safeJsonParse(jsonBlock);
+        String rawResponse = aiPort.generate(SYSTEM_MSG, prompt, 400, 0.8);
+        String jsonBlock   = extractJsonBlock(rawResponse);
+        JsonNode data      = safeJsonParse(jsonBlock);
 
         String campo = textNode(data, "campo");
         if (campo.isBlank()) {
@@ -123,7 +116,6 @@ public class PreguntaGeneratorService {
             texto.put(lang, val);
         }
 
-        // Deduplication: check both campo identifier and Spanish text
         if (preguntaRepository.existsByCampo(campo)) {
             throw new RuntimeException(
                     "AI generated a 'campo' that already exists in the database: \"" + campo + "\"");
@@ -174,6 +166,14 @@ public class PreguntaGeneratorService {
         }
 
         return sb.toString();
+    }
+
+    private String extractJsonBlock(String text) {
+        return jsonUtils.extractJsonBlock(text);
+    }
+
+    private JsonNode safeJsonParse(String json) {
+        return jsonUtils.safeJsonParse(json);
     }
 
     private static String textNode(JsonNode node, String field) {
