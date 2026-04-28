@@ -1,6 +1,7 @@
 package com.github.juanfernandez.article.article.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.juanfernandez.article.article.domain.Article;
 import com.github.juanfernandez.article.article.domain.ArticleRequest;
 import com.github.juanfernandez.article.article.port.in.ArticleGeneratorPort;
@@ -10,6 +11,10 @@ import com.github.juanfernandez.article.shared.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +56,7 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
     private final SeoService seoService;
     private final TextUtils textUtils;
     private final JsonUtils jsonUtils;
+    private final ObjectMapper objectMapper;
 
     public ArticleGeneratorService(
             ArticleGeneratorProperties properties,
@@ -58,13 +64,15 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
             PromptBuilderService promptBuilder,
             SeoService seoService,
             TextUtils textUtils,
-            JsonUtils jsonUtils) {
+            JsonUtils jsonUtils,
+            ObjectMapper objectMapper) {
         this.properties = properties;
         this.aiPort = aiPort;
         this.promptBuilder = promptBuilder;
         this.seoService = seoService;
         this.textUtils = textUtils;
         this.jsonUtils = jsonUtils;
+        this.objectMapper = objectMapper;
     }
 
     // ── ArticleGeneratorPort implementation ───────────────────────────────
@@ -137,8 +145,13 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
             }
         }
 
-        return assembleArticle(title, summary, body, keywords, category, subcategory, tag,
+        // ── Assemble the article with SEO metadata ────────────────────────
+        Article article = assembleArticle(title, summary, body, keywords, category, subcategory, tag,
                 author, site, language);
+
+        writeJsonFile(article);
+
+        return article;
     }
 
     // ── Content generation helpers ────────────────────────────────────────
@@ -246,6 +259,24 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
                 title, slug, wordCount, readingTime);
 
         return article;
+    }
+
+    // ── JSON file output ──────────────────────────────────────────────────
+
+    private void writeJsonFile(Article article) {
+        String outputDir = properties.getOutputDir();
+        if (outputDir == null || outputDir.isBlank()) {
+            return;
+        }
+        try {
+            Path dir = Paths.get(outputDir);
+            Files.createDirectories(dir);
+            Path file = dir.resolve(article.getSlug() + ".json");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), article);
+            log.info("Article JSON written to '{}'", file.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to write article JSON file to directory '{}': {}", outputDir, e.getMessage(), e);
+        }
     }
 
     // ── Retry with exponential back-off ───────────────────────────────────

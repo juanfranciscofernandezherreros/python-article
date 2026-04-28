@@ -92,8 +92,9 @@ public class ArticleGeneratorAutoConfiguration {
             PromptBuilderService promptBuilderService,
             SeoService seoService,
             TextUtils textUtils,
-            JsonUtils jsonUtils) {
+            JsonUtils jsonUtils,
+            ObjectMapper objectMapper) {
         return new ArticleGeneratorService(
-                properties, aiPort, promptBuilderService, seoService, textUtils, jsonUtils);
+                properties, aiPort, promptBuilderService, seoService, textUtils, jsonUtils, objectMapper);
     }
 }
