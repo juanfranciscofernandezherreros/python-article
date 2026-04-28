@@ -1,10 +1,13 @@
-package com.github.juanfernandez.article.service;
+package com.github.juanfernandez.article.article.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.juanfernandez.article.config.ArticleGeneratorProperties;
-import com.github.juanfernandez.article.model.Article;
-import com.github.juanfernandez.article.model.ArticleRequest;
+import com.github.juanfernandez.article.article.domain.Article;
+import com.github.juanfernandez.article.article.domain.ArticleRequest;
+import com.github.juanfernandez.article.article.port.in.ArticleGeneratorPort;
+import com.github.juanfernandez.article.shared.ai.port.AiPort;
+import com.github.juanfernandez.article.shared.config.ArticleGeneratorProperties;
+import com.github.juanfernandez.article.shared.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +22,12 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * Main service for AI-powered article generation with full SEO metadata.
+ * Application service that implements the {@link ArticleGeneratorPort} use case.
+ *
+ * <p>This class orchestrates AI-powered article generation with full SEO metadata.
+ * It depends on the {@link AiPort} output port (fulfilled by {@link AiClientAdapter}) and
+ * internal application helpers ({@link PromptBuilderService}, {@link SeoService},
+ * {@link TextUtils}).
  *
  * <h2>Generation algorithm (two-phase deduplication)</h2>
  *
@@ -37,55 +45,51 @@ import java.util.Random;
  * ({@link ArticleGeneratorProperties#getMaxApiRetries()} retries,
  * {@link ArticleGeneratorProperties#getRetryBaseDelaySeconds()} seconds base delay).
  */
-public class ArticleGeneratorService {
+public class ArticleGeneratorService implements ArticleGeneratorPort {
 
     private static final Logger log = LoggerFactory.getLogger(ArticleGeneratorService.class);
     private static final Random RANDOM = new Random();
 
     private final ArticleGeneratorProperties properties;
-    private final AiClientService aiClient;
+    private final AiPort aiPort;
     private final PromptBuilderService promptBuilder;
     private final SeoService seoService;
     private final TextUtils textUtils;
+    private final JsonUtils jsonUtils;
     private final ObjectMapper objectMapper;
 
     public ArticleGeneratorService(
             ArticleGeneratorProperties properties,
-            AiClientService aiClient,
+            AiPort aiPort,
             PromptBuilderService promptBuilder,
             SeoService seoService,
             TextUtils textUtils,
+            JsonUtils jsonUtils,
             ObjectMapper objectMapper) {
         this.properties = properties;
-        this.aiClient = aiClient;
+        this.aiPort = aiPort;
         this.promptBuilder = promptBuilder;
         this.seoService = seoService;
         this.textUtils = textUtils;
+        this.jsonUtils = jsonUtils;
         this.objectMapper = objectMapper;
     }
 
-    // ── Public API ────────────────────────────────────────────────────────
+    // ── ArticleGeneratorPort implementation ───────────────────────────────
 
     /**
-     * Generates a complete SEO article from an {@link ArticleRequest}.
-     *
-     * <p>Per-request fields ({@code authorUsername}, {@code site}, {@code language}) override the
-     * corresponding values from {@link ArticleGeneratorProperties} when non-null.
-     *
-     * @param request article generation parameters
-     * @return fully populated {@link Article} with SEO metadata
-     * @throws IllegalArgumentException if {@code request.category} is blank
-     * @throws RuntimeException         if the AI fails to generate a unique title after all retries
+     * {@inheritDoc}
      */
+    @Override
     public Article generateArticle(ArticleRequest request) {
         validateRequest(request);
 
         String category    = request.getCategory();
         String subcategory = request.getSubcategory() != null ? request.getSubcategory() : "General";
         String tag         = request.getTag();
-        String language    = request.getLanguage()      != null ? request.getLanguage()      : properties.getLanguage();
-        String site        = request.getSite()          != null ? request.getSite()          : properties.getSite();
-        String author      = request.getAuthorUsername()!= null ? request.getAuthorUsername(): properties.getAuthorUsername();
+        String language    = request.getLanguage()       != null ? request.getLanguage()       : properties.getLanguage();
+        String site        = request.getSite()           != null ? request.getSite()           : properties.getSite();
+        String author      = request.getAuthorUsername() != null ? request.getAuthorUsername() : properties.getAuthorUsername();
         List<String> avoidTitles = new ArrayList<>(request.getAvoidTitles());
 
         log.info("Generating article: category='{}', subcategory='{}', tag='{}', language='{}'",
@@ -95,7 +99,6 @@ public class ArticleGeneratorService {
         List<String> keywords;
 
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            // ── Explicit title mode ──────────────────────────────────────────
             var result = generateArticleContent(category, subcategory, tag,
                     request.getTitle(), avoidTitles, language);
             title    = request.getTitle();
@@ -103,7 +106,6 @@ public class ArticleGeneratorService {
             body     = textUtils.replaceH1(result.body(), title);
             keywords = result.keywords();
         } else {
-            // ── Auto-title mode with deduplication ───────────────────────────
             var phase1 = generateArticleContent(category, subcategory, tag,
                     null, avoidTitles, language);
 
@@ -113,7 +115,6 @@ public class ArticleGeneratorService {
                 body     = phase1.body();
                 keywords = phase1.keywords();
             } else {
-                // Phase 2: body is valid, regenerate only the title
                 log.warn("Phase 1 title '{}' is too similar to existing titles — starting title regeneration.",
                         phase1.title());
                 avoidTitles.add(phase1.title());
@@ -162,14 +163,14 @@ public class ArticleGeneratorService {
         String prompt = promptBuilder.buildGenerationPrompt(
                 category, subcategory, tag, title, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiClient.generate(
+        String rawText = withRetry(() -> aiPort.generate(
                 promptBuilder.getGenerationSystemMsg(),
                 prompt,
                 properties.getMaxArticleTokens(),
                 properties.getTemperatureArticle()));
 
-        String jsonBlock = aiClient.extractJsonBlock(rawText);
-        JsonNode data    = aiClient.safeJsonParse(jsonBlock);
+        String jsonBlock = extractJsonBlock(rawText);
+        JsonNode data    = safeJsonParse(jsonBlock);
 
         String parsedTitle   = textNode(data, "title");
         String parsedSummary = textNode(data, "summary");
@@ -182,7 +183,6 @@ public class ArticleGeneratorService {
                     + "Raw JSON preview: " + jsonBlock.substring(0, Math.min(300, jsonBlock.length())));
         }
 
-        // Ensure body has an <h1>
         if (!parsedBody.toLowerCase().contains("<h1")) {
             parsedBody = "<h1>" + textUtils.htmlEscape(parsedTitle) + "</h1>\n" + parsedBody;
         }
@@ -195,14 +195,14 @@ public class ArticleGeneratorService {
         String prompt = promptBuilder.buildTitlePrompt(
                 category, subcategory, tag, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiClient.generate(
+        String rawText = withRetry(() -> aiPort.generate(
                 promptBuilder.getTitleSystemMsg(),
                 prompt,
                 properties.getMaxTitleTokens(),
                 properties.getTemperatureTitle()));
 
         return rawText.strip()
-                .replaceAll("^[\"']|[\"']$", "")  // strip wrapping quotes if any
+                .replaceAll("^[\"']|[\"']$", "")
                 .strip();
     }
 
@@ -281,12 +281,6 @@ public class ArticleGeneratorService {
 
     // ── Retry with exponential back-off ───────────────────────────────────
 
-    /**
-     * Executes {@code fn} with exponential back-off retries for transient network errors.
-     *
-     * <p>Only retries on {@link java.net.ConnectException}, {@link java.net.SocketTimeoutException}
-     * and similar I/O errors.  Business exceptions (e.g. invalid API key) are re-thrown immediately.
-     */
     private <T> T withRetry(ThrowingSupplier<T> fn) {
         int maxRetries = properties.getMaxApiRetries();
         int baseDelay  = properties.getRetryBaseDelaySeconds();
@@ -296,7 +290,6 @@ public class ArticleGeneratorService {
             try {
                 return fn.get();
             } catch (RuntimeException e) {
-                // Retry only on network-level errors
                 if (isTransientError(e)) {
                     lastException = e;
                     double wait = baseDelay * Math.pow(2, attempt - 1) + RANDOM.nextDouble();
@@ -323,6 +316,16 @@ public class ArticleGeneratorService {
                 || msg.contains("SocketTimeoutException")
                 || msg.contains("ConnectionRefused")
                 || msg.contains("UnknownHostException");
+    }
+
+    // ── JSON helpers ──────────────────────────────────────────────────────
+
+    private String extractJsonBlock(String text) {
+        return jsonUtils.extractJsonBlock(text);
+    }
+
+    private JsonNode safeJsonParse(String json) {
+        return jsonUtils.safeJsonParse(json);
     }
 
     // ── Utility ───────────────────────────────────────────────────────────

@@ -2,8 +2,14 @@ package com.github.juanfernandez.article.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.juanfernandez.article.config.ArticleGeneratorProperties;
-import com.github.juanfernandez.article.model.ArticleRequest;
+import com.github.juanfernandez.article.article.application.ArticleGeneratorService;
+import com.github.juanfernandez.article.article.application.PromptBuilderService;
+import com.github.juanfernandez.article.article.application.SeoService;
+import com.github.juanfernandez.article.article.application.TextUtils;
+import com.github.juanfernandez.article.article.domain.ArticleRequest;
+import com.github.juanfernandez.article.shared.ai.AiClientAdapter;
+import com.github.juanfernandez.article.shared.config.ArticleGeneratorProperties;
+import com.github.juanfernandez.article.shared.util.JsonUtils;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -55,13 +61,14 @@ class ArticleGeneratorServiceJsonTest {
 
         objectMapper = new ObjectMapper();
 
-        AiClientService aiClient = new AiClientService(properties, objectMapper, mockModel);
+        AiClientAdapter aiClient = new AiClientAdapter(properties, objectMapper, mockModel);
         PromptBuilderService promptBuilder = new PromptBuilderService(properties);
         SeoService seoService = new SeoService(properties);
         TextUtils textUtils = new TextUtils();
+        JsonUtils jsonUtils = new JsonUtils(objectMapper);
 
         service = new ArticleGeneratorService(
-                properties, aiClient, promptBuilder, seoService, textUtils, objectMapper);
+                properties, aiClient, promptBuilder, seoService, textUtils, jsonUtils, objectMapper);
     }
 
     // ── outputDir configured ──────────────────────────────────────────────

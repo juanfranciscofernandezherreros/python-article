@@ -1,6 +1,6 @@
-package com.github.juanfernandez.article.config;
+package com.github.juanfernandez.article.shared.config;
 
-import com.github.juanfernandez.article.model.AiProvider;
+import com.github.juanfernandez.article.shared.ai.AiProvider;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -139,6 +139,40 @@ public class ArticleGeneratorProperties {
      */
     private String titleSystemMsg;
 
+    // ── Prompt templates ──────────────────────────────────────────────────
+
+    /**
+     * Template for the user prompt sent to the AI for full article generation.
+     * When set, overrides the built-in default prompt.
+     *
+     * <p>Supported placeholders:
+     * <ul>
+     *   <li>{@code {lang}}             — resolved language name (e.g. {@code español})</li>
+     *   <li>{@code {topic}}            — tag/topic fragment (e.g. {@code sobre "JWT" }), empty when not set</li>
+     *   <li>{@code {parentName}}       — category name</li>
+     *   <li>{@code {subcatName}}       — sub-category name</li>
+     *   <li>{@code {titleInstruction}} — title instruction fragment (verbatim or SEO-auto)</li>
+     *   <li>{@code {avoidBlock}}       — avoid-titles fragment, empty when list is empty</li>
+     * </ul>
+     */
+    private String generationPromptTemplate;
+
+    /**
+     * Template for the user prompt sent to the AI for title-only generation.
+     * When set, overrides the built-in default prompt.
+     *
+     * <p>Supported placeholders:
+     * <ul>
+     *   <li>{@code {lang}}       — resolved language name (e.g. {@code español})</li>
+     *   <li>{@code {topic}}      — tag/topic fragment, empty when not set</li>
+     *   <li>{@code {parentName}} — category name</li>
+     *   <li>{@code {subcatName}} — sub-category name</li>
+     *   <li>{@code {maxLen}}     — maximum title length in characters</li>
+     *   <li>{@code {avoidBlock}} — avoid-titles fragment, empty when list is empty</li>
+     * </ul>
+     */
+    private String titlePromptTemplate;
+
     // ── Getters & Setters ─────────────────────────────────────────────────
 
     public AiProvider getProvider() { return provider; }
@@ -206,4 +240,10 @@ public class ArticleGeneratorProperties {
 
     public String getTitleSystemMsg() { return titleSystemMsg; }
     public void setTitleSystemMsg(String titleSystemMsg) { this.titleSystemMsg = titleSystemMsg; }
+
+    public String getGenerationPromptTemplate() { return generationPromptTemplate; }
+    public void setGenerationPromptTemplate(String generationPromptTemplate) { this.generationPromptTemplate = generationPromptTemplate; }
+
+    public String getTitlePromptTemplate() { return titlePromptTemplate; }
+    public void setTitlePromptTemplate(String titlePromptTemplate) { this.titlePromptTemplate = titlePromptTemplate; }
 }

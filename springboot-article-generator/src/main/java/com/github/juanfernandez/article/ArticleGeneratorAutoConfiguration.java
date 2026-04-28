@@ -1,12 +1,15 @@
 package com.github.juanfernandez.article;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.juanfernandez.article.config.ArticleGeneratorProperties;
-import com.github.juanfernandez.article.service.AiClientService;
-import com.github.juanfernandez.article.service.ArticleGeneratorService;
-import com.github.juanfernandez.article.service.PromptBuilderService;
-import com.github.juanfernandez.article.service.SeoService;
-import com.github.juanfernandez.article.service.TextUtils;
+import com.github.juanfernandez.article.article.application.ArticleGeneratorService;
+import com.github.juanfernandez.article.article.application.PromptBuilderService;
+import com.github.juanfernandez.article.article.application.SeoService;
+import com.github.juanfernandez.article.article.application.TextUtils;
+import com.github.juanfernandez.article.article.port.in.ArticleGeneratorPort;
+import com.github.juanfernandez.article.shared.ai.AiClientAdapter;
+import com.github.juanfernandez.article.shared.ai.port.AiPort;
+import com.github.juanfernandez.article.shared.config.ArticleGeneratorProperties;
+import com.github.juanfernandez.article.shared.util.JsonUtils;
 import dev.langchain4j.model.chat.ChatModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -17,69 +20,26 @@ import org.springframework.context.annotation.Bean;
 /**
  * Spring Boot auto-configuration for the Article Generator library.
  *
- * <p>Registers all necessary beans when the library is on the classpath.  Every bean is guarded
- * with {@code @ConditionalOnMissingBean} so consuming applications can override any individual
- * component by declaring their own bean of the same type.
+ * <p>This is the <strong>primary</strong> auto-configuration. It registers all beans required
+ * to generate SEO articles via {@link ArticleGeneratorPort} / {@link ArticleGeneratorService}.
+ * Every bean is guarded with {@code @ConditionalOnMissingBean} so consuming applications can
+ * override any individual component by declaring their own bean of the same type.
+ *
+ * <p>Question generation ({@code PreguntaGeneratorService}) is handled separately by
+ * {@link PreguntaGeneratorAutoConfiguration}, which is only activated when a
+ * {@code JpaPreguntaRepository} bean is present.
  *
  * <p>Activated automatically via
  * {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}.
  *
- * <h2>Minimal required configuration</h2>
- * <pre>
- * # For OpenAI via LangChain4j (recommended)
- * langchain4j:
- *   open-ai:
- *     chat-model:
- *       api-key: ${OPENAIAPIKEY}
- *       model-name: gpt-4o
- *       temperature: 0.0
- *       timeout: PT60S
- *       log-requests: true
- *       log-responses: true
- *
- * # For Google Gemini via LangChain4j (recommended)
- * langchain4j:
- *   google-ai-gemini:
- *     chat-model:
- *       api-key: ${GEMINI_API_KEY}
- *       model-name: gemini-2.0-flash
- *       temperature: 0.0
- *       log-requests: true
- *       log-responses: true
- *
- * # For Ollama via LangChain4j (recommended)
- * langchain4j:
- *   ollama:
- *     chat-model:
- *       base-url: http://localhost:11434
- *       model-name: llama3
- *       temperature: 0.0
- *       timeout: PT120S
- *
- * # For Anthropic Claude via LangChain4j (recommended)
- * langchain4j:
- *   anthropic:
- *     chat-model:
- *       api-key: ${ANTHROPIC_API_KEY}
- *       model-name: claude-sonnet-4-5
- *       temperature: 0.0
- *       timeout: PT60S
- *       log-requests: true
- *       log-responses: true
- *
- * # Fallback: OpenAI direct REST (no LangChain4j)
- * article-generator.openai-api-key=${OPENAIAPIKEY}
- *
- * # Fallback: Gemini direct REST (no LangChain4j)
- * article-generator.provider=gemini
- * article-generator.model=gemini-2.0-flash
- * article-generator.gemini-api-key=${GEMINI_API_KEY}
- *
- * # Fallback: Ollama direct REST (no LangChain4j)
- * article-generator.provider=ollama
- * article-generator.model=llama3
- * article-generator.ollama-base-url=http://localhost:11434
- * </pre>
+ * <h2>Hexagonal architecture</h2>
+ * <ul>
+ *   <li><strong>Shared kernel</strong>: {@link ArticleGeneratorProperties}, {@link AiPort} /
+ *       {@link AiClientAdapter}, {@link JsonUtils}.</li>
+ *   <li><strong>Article application layer</strong>: {@link ArticleGeneratorService} implements
+ *       {@link ArticleGeneratorPort}; supported by {@link PromptBuilderService},
+ *       {@link SeoService} and {@link TextUtils}.</li>
+ * </ul>
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ArticleGeneratorProperties.class)
@@ -89,6 +49,12 @@ public class ArticleGeneratorAutoConfiguration {
     @ConditionalOnMissingBean
     public ObjectMapper articleGeneratorObjectMapper() {
         return new ObjectMapper();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public JsonUtils jsonUtils(ObjectMapper objectMapper) {
+        return new JsonUtils(objectMapper);
     }
 
     @Bean
@@ -110,24 +76,25 @@ public class ArticleGeneratorAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean
-    public AiClientService aiClientService(ArticleGeneratorProperties properties,
+    @ConditionalOnMissingBean(AiPort.class)
+    public AiClientAdapter aiClientAdapter(ArticleGeneratorProperties properties,
                                            ObjectMapper objectMapper,
                                            ObjectProvider<ChatModel> chatModelProvider) {
         ChatModel chatModel = chatModelProvider.getIfAvailable();
-        return new AiClientService(properties, objectMapper, chatModel);
+        return new AiClientAdapter(properties, objectMapper, chatModel);
     }
 
     @Bean
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean(ArticleGeneratorPort.class)
     public ArticleGeneratorService articleGeneratorService(
             ArticleGeneratorProperties properties,
-            AiClientService aiClientService,
+            AiPort aiPort,
             PromptBuilderService promptBuilderService,
             SeoService seoService,
             TextUtils textUtils,
+            JsonUtils jsonUtils,
             ObjectMapper objectMapper) {
         return new ArticleGeneratorService(
-                properties, aiClientService, promptBuilderService, seoService, textUtils, objectMapper);
+                properties, aiPort, promptBuilderService, seoService, textUtils, jsonUtils, objectMapper);
     }
 }
