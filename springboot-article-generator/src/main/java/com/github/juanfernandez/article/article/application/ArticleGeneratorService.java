@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 
 /**
  * Application service that implements the {@link ArticleGeneratorPort} use case.
@@ -43,7 +42,6 @@ import java.util.Random;
 public class ArticleGeneratorService implements ArticleGeneratorPort {
 
     private static final Logger log = LoggerFactory.getLogger(ArticleGeneratorService.class);
-    private static final Random RANDOM = new Random();
 
     private final ArticleGeneratorProperties properties;
     private final AiPort aiPort;
@@ -150,11 +148,11 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         String prompt = promptBuilder.buildGenerationPrompt(
                 category, subcategory, tag, title, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiPort.generate(
+        String rawText = aiPort.generate(
                 promptBuilder.getGenerationSystemMsg(),
                 prompt,
                 properties.getMaxArticleTokens(),
-                properties.getTemperatureArticle()));
+                properties.getTemperatureArticle());
 
         String jsonBlock = extractJsonBlock(rawText);
         JsonNode data    = safeJsonParse(jsonBlock);
@@ -182,11 +180,11 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         String prompt = promptBuilder.buildTitlePrompt(
                 category, subcategory, tag, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiPort.generate(
+        String rawText = aiPort.generate(
                 promptBuilder.getTitleSystemMsg(),
                 prompt,
                 properties.getMaxTitleTokens(),
-                properties.getTemperatureTitle()));
+                properties.getTemperatureTitle());
 
         return rawText.strip()
                 .replaceAll("^[\"']|[\"']$", "")
@@ -248,45 +246,6 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         return article;
     }
 
-    // ── Retry with exponential back-off ───────────────────────────────────
-
-    private <T> T withRetry(ThrowingSupplier<T> fn) {
-        int maxRetries = properties.getMaxApiRetries();
-        int baseDelay  = properties.getRetryBaseDelaySeconds();
-        Exception lastException = null;
-
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return fn.get();
-            } catch (RuntimeException e) {
-                if (isTransientError(e)) {
-                    lastException = e;
-                    double wait = baseDelay * Math.pow(2, attempt - 1) + RANDOM.nextDouble();
-                    log.warn("Transient error on attempt {}/{}: {}. Retrying in {}s.",
-                            attempt, maxRetries, e.getMessage(), String.format("%.1f", wait));
-                    try { Thread.sleep((long) (wait * 1000)); } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during retry wait", ie);
-                    }
-                } else {
-                    throw e;
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Unexpected error calling AI API", e);
-            }
-        }
-        throw new RuntimeException("AI API failed after " + maxRetries + " retries", lastException);
-    }
-
-    private boolean isTransientError(RuntimeException e) {
-        Throwable cause = e.getCause() != null ? e.getCause() : e;
-        String msg = cause.getClass().getName() + " " + (cause.getMessage() != null ? cause.getMessage() : "");
-        return msg.contains("ConnectException")
-                || msg.contains("SocketTimeoutException")
-                || msg.contains("ConnectionRefused")
-                || msg.contains("UnknownHostException");
-    }
-
     // ── JSON helpers ──────────────────────────────────────────────────────
 
     private String extractJsonBlock(String text) {
@@ -330,9 +289,4 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
     // ── Inner types ───────────────────────────────────────────────────────
 
     private record ArticleContent(String title, String summary, String body, List<String> keywords) {}
-
-    @FunctionalInterface
-    private interface ThrowingSupplier<T> {
-        T get() throws Exception;
-    }
 }

@@ -1,6 +1,8 @@
 package com.github.juanfernandez.article.shared.config;
 
+import com.github.juanfernandez.article.shared.ai.AiConfig;
 import com.github.juanfernandez.article.shared.ai.AiProvider;
+import com.github.juanfernandez.article.shared.ai.RetryConfig;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -30,7 +32,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * </pre>
  */
 @ConfigurationProperties(prefix = "article-generator")
-public class ArticleGeneratorProperties {
+public class ArticleGeneratorProperties implements AiConfig, RetryConfig {
 
     // ── AI provider selection ─────────────────────────────────────────────
 
