@@ -5,27 +5,45 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Spring Data JPA repository for {@link Pregunta} entities stored in the
  * {@code preguntas} PostgreSQL table.
  */
-public interface PreguntaRepository extends JpaRepository<Pregunta, Long> {
+public interface PreguntaRepository extends JpaRepository<Pregunta, UUID> {
 
     /**
-     * Returns all question texts in a given category (case-insensitive).
+     * Returns all questions ordered by their display position.
      *
-     * @param categoria category name to filter by
-     * @return list of matching {@link Pregunta} entities
+     * @return questions sorted ascending by {@code orden}
      */
-    List<Pregunta> findByCategoriaIgnoreCase(String categoria);
+    List<Pregunta> findAllByOrderByOrdenAsc();
 
     /**
-     * Returns every question text (the {@code pregunta} column only) from the table.
-     * Used to build the deduplication context for AI generation.
+     * Returns the question with the highest {@code orden} value.
+     * Used to compute the next available position when inserting a new question.
      *
-     * @return list of question strings
+     * @return the last question by order, or empty if the table is empty
      */
-    @Query("SELECT p.pregunta FROM Pregunta p")
-    List<String> findAllPreguntaTexts();
+    Optional<Pregunta> findTopByOrderByOrdenDesc();
+
+    /**
+     * Returns {@code true} when a question with the given camel-case {@code campo} identifier
+     * already exists.
+     *
+     * @param campo camelCase field name to check
+     * @return {@code true} if the campo is already used
+     */
+    boolean existsByCampo(String campo);
+
+    /**
+     * Returns all Spanish question texts ({@code texto->>'es'}) from the table.
+     * Used to build the deduplication context sent to the AI provider.
+     *
+     * @return list of Spanish question strings
+     */
+    @Query("SELECT p.texto FROM Pregunta p")
+    List<java.util.Map<String, String>> findAllTextos();
 }
