@@ -1,198 +1,121 @@
-# Spring Boot Article & Question Generator
+# ai-generic-generation-content
 
-Starter de Spring Boot para generar **artículos técnicos con SEO completo** y **preguntas multilingüe** con IA.  
-Integración nativa con **LangChain4j** para **OpenAI**, **Google Gemini**, **Ollama** (local) y **Anthropic Claude**.
+Spring Boot starter library for AI-powered content generation.
 
----
+Two main capabilities:
+- **Article generation** — technical articles with full SEO metadata via `ArticleGeneratorService`.
+- **Question generation** — multilingual questionnaire questions persisted in PostgreSQL via `PreguntaGeneratorService`.
 
-## Contenido
-
-- [¿Qué incluye?](#qué-incluye)
-- [Arquitectura](#arquitectura)
-- [Requisitos](#requisitos)
-- [Build y tests](#build-y-tests)
-- [Cómo usarlo](#cómo-usarlo-en-otro-proyecto-spring-boot)
-  - [1. Instalar el starter](#1-instalar-el-starter-localmente)
-  - [2. Agregar dependencia](#2-agregar-dependencia-en-tu-proyecto-spring-boot)
-  - [3. Configurar proveedores](#3-configurar-propiedades)
-  - [4. Inyectar y usar el servicio de artículos](#4-inyectar-y-usar-articlegeneratorservice)
-  - [5. Inyectar y usar el servicio de preguntas](#5-inyectar-y-usar-preguntaGeneratorservice)
-- [Referencia de propiedades](#referencia-de-propiedades)
-- [Algoritmo de deduplicación de títulos](#algoritmo-de-deduplicación-de-títulos)
-- [Ejemplo end-to-end — Artículos](#ejemplo-de-uso-end-to-end-artículos)
-- [Ejemplo end-to-end — Preguntas](#ejemplo-de-uso-end-to-end-preguntas)
-- [Modelo de entrada](#modelo-de-entrada-articlerequest)
-- [Modelo de respuesta `Article`](#modelo-de-respuesta-article)
-- [Modelo de entidad `Pregunta`](#modelo-de-entidad-pregunta)
-- [Notas rápidas](#notas-rápidas)
+Supported AI providers (via **LangChain4j** or direct REST fallback):  
+**OpenAI (GPT)** · **Google Gemini** · **Ollama (local)** · **Anthropic Claude**
 
 ---
 
-## ¿Qué incluye?
+## Contents
 
-- `ai-generic-generation-content/` — librería `article-generator-spring-boot-starter` con autoconfiguración Spring Boot.
-- **Generación de artículos** listos para inyectar: `ArticleGeneratorService`.
-- **Generación de preguntas** multilingüe persistidas en PostgreSQL: `PreguntaGeneratorService`.
-- Integración **LangChain4j 1.0.0-beta5** como método preferido para los cuatro proveedores:
-  - `langchain4j-open-ai-spring-boot-starter` — OpenAI (GPT)
-  - `langchain4j-google-ai-gemini-spring-boot-starter` — Google Gemini
-  - `langchain4j-ollama-spring-boot-starter` — Ollama (local)
-  - `langchain4j-anthropic-spring-boot-starter` — Anthropic Claude
-- Soporte de proveedores IA (todos disponibles también por REST directo como fallback excepto Anthropic):
-  - **OpenAI** (GPT) — vía LangChain4j `ChatModel` (recomendado) o REST directo
-  - **Google Gemini** — vía LangChain4j `ChatModel` (recomendado) o REST directo
-  - **Ollama** (local) — vía LangChain4j `ChatModel` (recomendado) o REST directo
-  - **Anthropic Claude** — vía LangChain4j `ChatModel` (requiere `langchain4j-anthropic-spring-boot-starter`)
-- Generación de artículos con HTML semántico, metadatos SEO completos, Schema.org JSON-LD y Open Graph.
-- Generación de preguntas de cuestionario en cuatro idiomas (ca/en/es/fr) con deduplicación automática y persistencia en PostgreSQL.
-- Algoritmo de deduplicación de títulos en dos fases.
-- Reintentos automáticos con _exponential back-off_ para errores transitorios de red.
+- [Requirements](#requirements)
+- [Add the dependency](#add-the-dependency)
+- [Configure an AI provider](#configure-an-ai-provider)
+- [Use ArticleGeneratorService](#use-articlegeneratorservice)
+- [Use PreguntaGeneratorService](#use-preguntaGeneratorservice)
+- [Properties reference](#properties-reference)
+- [Article model reference](#article-model-reference)
+- [ArticleRequest reference](#articlerequest-reference)
+- [Pregunta model reference](#pregunta-model-reference)
+- [Title deduplication algorithm](#title-deduplication-algorithm)
+- [Quick notes](#quick-notes)
 
 ---
 
-## Arquitectura
+## Requirements
 
-```
-ArticleGeneratorService          ← orquesta la generación de artículos
-  ├─ PromptBuilderService        ← construye los prompts para la IA en el idioma indicado
-  ├─ AiClientService             ← cliente HTTP para los proveedores IA
-  │    ├─ LangChain4j ChatModel  ← OpenAI, Google Gemini, Ollama o Anthropic (recomendado, opcional)
-  │    ├─ OpenAI REST directo    ← fallback sin LangChain4j
-  │    ├─ Google Gemini REST     ← fallback sin LangChain4j
-  │    └─ Ollama REST            ← fallback sin LangChain4j (endpoint OpenAI-compatible)
-  ├─ SeoService                  ← genera canonical URL y Schema.org TechArticle JSON-LD
-  └─ TextUtils                   ← slugificación, similitud de títulos, recuento de palabras
-
-PreguntaGeneratorService         ← orquesta la generación y persistencia de preguntas
-  ├─ AiClientService             ← mismo cliente IA compartido con ArticleGeneratorService
-  └─ PreguntaRepository          ← acceso a la tabla PostgreSQL `preguntas` (Spring Data JPA)
-```
-
-| Clase | Propósito |
-|-------|-----------|
-| `ArticleGeneratorService` | Pipeline principal de artículos: generación, deduplicación, enriquecimiento SEO |
-| `PreguntaGeneratorService` | Genera y persiste preguntas multilingüe únicas en PostgreSQL |
-| `AiClientService` | Llamadas a la IA (LangChain4j / REST directo) y extracción de JSON |
-| `PromptBuilderService` | Construcción de prompts multilingüe con instrucciones SEO |
-| `SeoService` | URLs canónicas y datos estructurados Schema.org |
-| `TextUtils` | Slugs, similitud de títulos (LCS ratio), conteo de palabras, tiempo de lectura |
-| `ArticleGeneratorProperties` | Propiedades `@ConfigurationProperties(prefix = "article-generator")` |
-| `Article` | DTO de salida de artículo con contenido + metadatos SEO + Open Graph + estadísticas |
-| `ArticleRequest` | DTO de entrada para la generación de artículos |
-| `Pregunta` | Entidad JPA mapeada a la tabla `preguntas` con texto multilingüe JSONB |
-| `PreguntaRepository` | Repositorio Spring Data JPA para `Pregunta` |
-| `AiProvider` | Enum: `AUTO`, `OPENAI`, `GEMINI`, `OLLAMA`, `ANTHROPIC` |
-
-La autoconfiguración registra todos los beans con `@ConditionalOnMissingBean`, por lo que cualquier bean puede ser sobreescrito por el proyecto consumidor.
-`PreguntaGeneratorService` y `PreguntaRepository` solo se activan cuando `spring-boot-starter-data-jpa` está en el classpath y hay un `DataSource` configurado.
+| | Minimum |
+|---|---|
+| Java | 17 |
+| Maven | 3.9 |
+| Spring Boot (consuming app) | 3.x |
 
 ---
 
-## Requisitos
+## Add the dependency
 
-- Java 17+
-- Maven 3.9+
-- Spring Boot 3.x en el proyecto consumidor
-
----
-
-## Build y tests
-
-```bash
-cd ai-generic-generation-content
-mvn test
-```
-
----
-
-## Cómo usarlo en **otro proyecto Spring Boot**
-
-### 1) Instalar el starter localmente
-
-Desde la raíz de este repositorio:
+Install the library to your local Maven repository from the repo root:
 
 ```bash
 cd ai-generic-generation-content
 mvn clean install
 ```
 
-Esto instalará el artefacto en tu repositorio local (`~/.m2/repository`).
-
-### 2) Agregar dependencia en tu proyecto Spring Boot
-
-En el `pom.xml` del **otro proyecto**:
+Then add it to your Spring Boot project's `pom.xml`:
 
 ```xml
 <dependency>
-    <groupId>com.github.juanfernandez</groupId>
-    <artifactId>article-generator-spring-boot-starter</artifactId>
-    <version>1.0.1</version>
+    <groupId>io.github.aigen</groupId>
+    <artifactId>ai-generic-generation-content</artifactId>
+    <version>0.1.0</version>
 </dependency>
 ```
 
-> Si quieres usar LangChain4j, añade también el starter del proveedor deseado en el proyecto consumidor
-> (el starter los declara como dependencias `optional`):
->
-> ```xml
-> <!-- OpenAI -->
-> <dependency>
->     <groupId>dev.langchain4j</groupId>
->     <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
->     <version>1.0.0-beta5</version>
-> </dependency>
->
-> <!-- Google Gemini -->
-> <dependency>
->     <groupId>dev.langchain4j</groupId>
->     <artifactId>langchain4j-google-ai-gemini-spring-boot-starter</artifactId>
->     <version>1.0.0-beta5</version>
-> </dependency>
->
-> <!-- Ollama -->
-> <dependency>
->     <groupId>dev.langchain4j</groupId>
->     <artifactId>langchain4j-ollama-spring-boot-starter</artifactId>
->     <version>1.0.0-beta5</version>
-> </dependency>
->
-> <!-- Anthropic Claude -->
-> <dependency>
->     <groupId>dev.langchain4j</groupId>
->     <artifactId>langchain4j-anthropic-spring-boot-starter</artifactId>
->     <version>1.0.0-beta5</version>
-> </dependency>
-> ```
+The LangChain4j provider starters are declared `optional` in this library.  
+Add the one you need in **your** project:
 
-### 3) Configurar propiedades
+```xml
+<!-- OpenAI -->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
+    <version>1.0.0-beta5</version>
+</dependency>
 
-#### Opción A — OpenAI vía **LangChain4j** ✅ Recomendado
+<!-- Google Gemini -->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-google-ai-gemini-spring-boot-starter</artifactId>
+    <version>1.0.0-beta5</version>
+</dependency>
 
-Añade en `application.yml`:
+<!-- Ollama -->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-ollama-spring-boot-starter</artifactId>
+    <version>1.0.0-beta5</version>
+</dependency>
+
+<!-- Anthropic Claude -->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-anthropic-spring-boot-starter</artifactId>
+    <version>1.0.0-beta5</version>
+</dependency>
+```
+
+---
+
+## Configure an AI provider
+
+### Option A — OpenAI via LangChain4j ✅ Recommended
 
 ```yaml
 langchain4j:
   open-ai:
     chat-model:
       api-key: ${OPENAIAPIKEY}
-      model-name: gpt-4o          # cualquier modelo GPT
+      model-name: gpt-4o
       temperature: 0.7
       timeout: PT60S
       log-requests: true
       log-responses: true
 
 article-generator:
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-> El starter detecta automáticamente el bean `ChatModel` creado por la autoconfiguración de LangChain4j
-> y lo inyecta en `AiClientService`.
-> No es necesario definir `article-generator.provider` ni `article-generator.openai-api-key`.
->
-> LangChain4j gestiona el modelo, la clave API, la temperatura, el timeout y el logging de forma transparente.
+The starter auto-detects the `ChatModel` bean created by LangChain4j.  
+No need to set `article-generator.provider` or `article-generator.openai-api-key`.
 
-#### Opción B — Google Gemini vía **LangChain4j** ✅ Recomendado
+### Option B — Google Gemini via LangChain4j ✅ Recommended
 
 ```yaml
 langchain4j:
@@ -205,12 +128,12 @@ langchain4j:
       log-responses: true
 
 article-generator:
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-#### Opción C — Ollama vía **LangChain4j** ✅ Recomendado
+### Option C — Ollama via LangChain4j ✅ Recommended
 
 ```yaml
 langchain4j:
@@ -222,19 +145,22 @@ langchain4j:
       timeout: PT120S
 
 article-generator:
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-#### Opción D — Anthropic Claude vía **LangChain4j** ✅ Recomendado
+### Option D — Anthropic Claude via LangChain4j ✅ Recommended
+
+Requires `langchain4j-anthropic-spring-boot-starter` on the classpath.  
+Anthropic has no direct REST fallback — LangChain4j is mandatory.
 
 ```yaml
 langchain4j:
   anthropic:
     chat-model:
       api-key: ${ANTHROPIC_API_KEY}
-      model-name: claude-sonnet-4-5    # cualquier modelo Claude
+      model-name: claude-sonnet-4-5
       temperature: 0.7
       timeout: PT60S
       log-requests: true
@@ -242,71 +168,67 @@ langchain4j:
 
 article-generator:
   provider: anthropic
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-> Requiere `langchain4j-anthropic-spring-boot-starter` en el classpath del proyecto consumidor.
-> Anthropic no dispone de fallback REST directo; el bean `ChatModel` de LangChain4j es obligatorio.
-
-#### Opción E — OpenAI REST directo (sin LangChain4j)
+### Option E — OpenAI direct REST (no LangChain4j)
 
 ```yaml
 article-generator:
   provider: openai
   model: gpt-4o
   openai-api-key: ${OPENAIAPIKEY}
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-#### Opción F — Google Gemini REST directo (sin LangChain4j)
+### Option F — Google Gemini direct REST (no LangChain4j)
 
 ```yaml
 article-generator:
   provider: gemini
   model: gemini-2.0-flash
   gemini-api-key: ${GEMINI_API_KEY}
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-#### Opción G — Ollama REST directo (sin LangChain4j)
+### Option G — Ollama direct REST (no LangChain4j)
 
 ```yaml
 article-generator:
   provider: ollama
   model: llama3
   ollama-base-url: http://localhost:11434
-  site: https://mi-blog.com
+  site: https://myblog.com
   author-username: adminUser
-  language: es
+  language: en
 ```
 
-#### Detección automática de proveedor (`AUTO`)
+### Auto-detection (`AUTO`)
 
-Si no se especifica `article-generator.provider` (o se deja en `AUTO`), el starter aplica la siguiente lógica:
+When `article-generator.provider` is not set (or left as `AUTO`) the starter picks the provider in this order:
 
-1. Si hay un bean `ChatModel` de LangChain4j → **proveedor configurado vía LangChain4j** (OpenAI, Gemini u Ollama según el starter que hayas añadido)
-2. Si `article-generator.model` empieza por `gemini-` → **Gemini REST directo**
-3. Si `article-generator.ollama-base-url` está definido → **Ollama REST directo**
-4. Si no → **OpenAI REST directo** (requiere `article-generator.openai-api-key`)
+1. If a LangChain4j `ChatModel` bean is present → use it.
+2. Else if `article-generator.model` starts with `gemini-` → Gemini REST.
+3. Else if `article-generator.ollama-base-url` is set → Ollama REST.
+4. Otherwise → OpenAI REST (requires `article-generator.openai-api-key`).
 
-### 4) Inyectar y usar `ArticleGeneratorService`
+---
+
+## Use ArticleGeneratorService
+
+Inject `ArticleGeneratorService` (from `io.github.aigen.article.application`) and call `generateArticle(ArticleRequest)`.
 
 ```java
-package com.example.demo.web;
-
-import com.github.juanfernandez.article.model.Article;
-import com.github.juanfernandez.article.model.ArticleRequest;
-import com.github.juanfernandez.article.service.ArticleGeneratorService;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import io.github.aigen.article.application.ArticleGeneratorService;
+import io.github.aigen.article.domain.Article;
+import io.github.aigen.article.domain.ArticleRequest;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -323,14 +245,14 @@ public class ArticleController {
     @PostMapping("/generate")
     public Article generate(@RequestBody GenerateArticleInput input) {
         ArticleRequest request = ArticleRequest.builder()
-                .category(input.category())
+                .category(input.category())          // required
                 .subcategory(input.subcategory())
                 .tag(input.tag())
-                .title(input.title())           // optional: forces an exact title
+                .title(input.title())                // optional: fixes the title; skips deduplication
                 .language(input.language())
                 .site(input.site())
                 .authorUsername(input.authorUsername())
-                .avoidTitles(input.avoidTitles())
+                .avoidTitles(input.avoidTitles())    // titles the AI must not reproduce
                 .build();
 
         return articleGeneratorService.generateArticle(request);
@@ -340,7 +262,7 @@ public class ArticleController {
             String category,
             String subcategory,
             String tag,
-            String title,           // optional: if provided, the AI generates the body around this title
+            String title,
             String language,
             String site,
             String authorUsername,
@@ -349,13 +271,82 @@ public class ArticleController {
 }
 ```
 
+**Minimal example:**
+
+```java
+Article article = articleGeneratorService.generateArticle(
+    ArticleRequest.builder()
+        .category("Spring Boot")
+        .subcategory("Spring Security")
+        .tag("JWT Authentication")
+        .build()
+);
+
+System.out.println(article.getTitle());
+System.out.println(article.getBody());
+System.out.println(article.getCanonicalUrl());
+```
+
+**Sample curl call:**
+
+```bash
+curl -X POST http://localhost:8080/api/articles/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "category": "Spring Boot",
+    "subcategory": "Spring Security",
+    "tag": "JWT Authentication",
+    "language": "en",
+    "site": "https://myblog.com",
+    "authorUsername": "alice",
+    "avoidTitles": ["Introduction to JWT", "JWT basics"]
+  }'
+```
+
+**Sample response:**
+
+```json
+{
+  "title": "JWT Authentication in Spring Boot 3: a practical guide",
+  "slug": "jwt-authentication-in-spring-boot-3-a-practical-guide",
+  "summary": "Learn how to implement JWT in Spring Boot 3 with best practices.",
+  "body": "<h1>JWT Authentication in Spring Boot 3: a practical guide</h1>...",
+  "category": "Spring Security",
+  "tags": ["JWT Authentication"],
+  "author": "alice",
+  "status": "published",
+  "isVisible": true,
+  "keywords": ["jwt spring boot", "spring security", "token"],
+  "metaTitle": "JWT Authentication in Spring Boot 3: a practical guide",
+  "metaDescription": "Learn how to implement JWT in Spring Boot 3 with best practices.",
+  "canonicalUrl": "https://myblog.com/post/jwt-authentication-in-spring-boot-3-a-practical-guide",
+  "structuredData": {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "JWT Authentication in Spring Boot 3: a practical guide",
+    "author": { "@type": "Person", "name": "alice" },
+    "url": "https://myblog.com/post/jwt-authentication-in-spring-boot-3-a-practical-guide"
+  },
+  "ogTitle": "JWT Authentication in Spring Boot 3: a practical guide",
+  "ogDescription": "Learn how to implement JWT in Spring Boot 3 with best practices.",
+  "ogType": "article",
+  "wordCount": 1300,
+  "readingTime": 7,
+  "publishDate": "2026-04-28T10:00:00Z",
+  "createdAt": "2026-04-28T10:00:00Z",
+  "updatedAt": "2026-04-28T10:00:00Z",
+  "generatedAt": "2026-04-28T10:00:00Z"
+}
+```
+
 ---
 
-### 5) Inyectar y usar `PreguntaGeneratorService`
+## Use PreguntaGeneratorService
 
-> **Requisitos adicionales:** este bean solo se activa cuando `spring-boot-starter-data-jpa` está en el classpath del proyecto consumidor **y** hay una `DataSource` PostgreSQL configurada.
+**Additional requirements:** `spring-boot-starter-data-jpa` on the classpath and a PostgreSQL `DataSource` configured.  
+The `PreguntaGeneratorService` and `PreguntaRepository` beans are only registered when both conditions are met.
 
-Añade las dependencias en el `pom.xml` de tu proyecto:
+### 1. Add JPA + PostgreSQL dependencies
 
 ```xml
 <dependency>
@@ -369,12 +360,12 @@ Añade las dependencias en el `pom.xml` de tu proyecto:
 </dependency>
 ```
 
-Configura la fuente de datos en `application.yml`:
+### 2. Configure the data source
 
 ```yaml
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/mi_base_de_datos
+    url: jdbc:postgresql://localhost:5432/mydb
     username: ${DB_USER}
     password: ${DB_PASSWORD}
   jpa:
@@ -382,11 +373,11 @@ spring:
       ddl-auto: validate
 ```
 
-Crea la tabla `preguntas` en PostgreSQL (si no existe):
+### 3. Create the `preguntas` table
 
 ```sql
 CREATE TABLE preguntas (
-    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     campo          VARCHAR(255) NOT NULL,
     orden          INTEGER      NOT NULL,
     texto          JSONB        NOT NULL,
@@ -394,16 +385,12 @@ CREATE TABLE preguntas (
 );
 ```
 
-Inyecta y usa el servicio en tu aplicación:
+### 4. Inject and call the service
 
 ```java
-package com.example.demo.web;
-
-import com.github.juanfernandez.article.model.Pregunta;
-import com.github.juanfernandez.article.service.PreguntaGeneratorService;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import io.github.aigen.pregunta.application.PreguntaGeneratorService;
+import io.github.aigen.pregunta.domain.Pregunta;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/preguntas")
@@ -417,7 +404,6 @@ public class PreguntaController {
 
     /**
      * Generates a new unique multilingual question and persists it in the `preguntas` table.
-     * Returns the saved entity including the database-assigned UUID and orden.
      */
     @PostMapping("/generate")
     public Pregunta generate() {
@@ -426,157 +412,13 @@ public class PreguntaController {
 }
 ```
 
----
-
-## Referencia de propiedades
-
-Todas las propiedades tienen el prefijo `article-generator`.
-
-### Proveedor IA
-
-| Propiedad | Tipo | Defecto | Descripción |
-|-----------|------|---------|-------------|
-| `provider` | `AUTO` \| `OPENAI` \| `GEMINI` \| `OLLAMA` \| `ANTHROPIC` | `AUTO` | Proveedor IA activo |
-| `model` | `String` | `gpt-4o` | Nombre del modelo |
-| `openai-api-key` | `String` | — | Clave API de OpenAI |
-| `gemini-api-key` | `String` | — | Clave API de Google Gemini |
-| `ollama-base-url` | `String` | — | URL base del servidor Ollama (p.e. `http://localhost:11434`) |
-
-### Artículo por defecto
-
-| Propiedad | Tipo | Defecto | Descripción |
-|-----------|------|---------|-------------|
-| `site` | `String` | `""` | URL base para construir las URLs canónicas |
-| `author-username` | `String` | `adminUser` | Autor por defecto |
-| `language` | `String` | `es` | Idioma ISO 639-1 (p.e. `es`, `en`) |
-
-### Parámetros de generación IA
-
-| Propiedad | Tipo | Defecto | Descripción |
-|-----------|------|---------|-------------|
-| `temperature-article` | `double` | `0.7` | Temperatura para el cuerpo del artículo (0.0–1.0) |
-| `temperature-title` | `double` | `0.9` | Temperatura para la regeneración de títulos (0.0–1.0) |
-| `max-article-tokens` | `int` | `8096` | Tokens máximos de salida para el artículo completo |
-| `max-title-tokens` | `int` | `100` | Tokens máximos de salida solo para el título |
-
-### Deduplicación y reintentos
-
-| Propiedad | Tipo | Defecto | Descripción |
-|-----------|------|---------|-------------|
-| `similarity-threshold` | `double` | `0.86` | Umbral de similitud para considerar un título duplicado (0.0–1.0) |
-| `max-title-retries` | `int` | `5` | Intentos máximos para regenerar un título único (Fase 2) |
-| `max-api-retries` | `int` | `3` | Reintentos ante errores transitorios de la API |
-| `retry-base-delay-seconds` | `int` | `2` | Retardo base (segundos) para _exponential back-off_ |
-
-### Límites de metadatos SEO
-
-| Propiedad | Tipo | Defecto | Descripción |
-|-----------|------|---------|-------------|
-| `meta-title-max-length` | `int` | `60` | Longitud máxima del `metaTitle` (caracteres) |
-| `meta-description-max-length` | `int` | `160` | Longitud máxima de `metaDescription` (caracteres) |
-| `max-avoid-titles-in-prompt` | `int` | `5` | Máximo de títulos a evitar incluidos en el prompt |
-
-### Mensajes de sistema personalizables
-
-| Propiedad | Tipo | Descripción |
-|-----------|------|-------------|
-| `generation-system-msg` | `String` | Sobreescribe el mensaje de sistema para la generación del artículo |
-| `title-system-msg` | `String` | Sobreescribe el mensaje de sistema para la regeneración del título |
-
----
-
-## Algoritmo de deduplicación de títulos
-
-El starter aplica un proceso en **dos fases** para garantizar títulos únicos:
-
-**Fase 1 — Generación completa**
-
-1. La IA genera el artículo completo: título, resumen, cuerpo HTML y palabras clave.
-2. Se calcula la similitud del título generado con cada entrada de `avoidTitles` usando la métrica de similitud LCS (`2 * LCS / (|a| + |b|)`, equivalente a Python's `SequenceMatcher.ratio()`).
-3. Si la similitud es inferior al umbral (`similarity-threshold`, defecto `0.86`), el artículo se acepta → **fin**.
-4. Si el título es demasiado similar, se activa la Fase 2.
-
-**Fase 2 — Regeneración solo del título**
-
-1. Se reutiliza el cuerpo HTML generado en la Fase 1.
-2. Se solicita a la IA que genere únicamente un nuevo título (hasta `max-title-retries` intentos).
-3. Cada título candidato se comprueba contra `avoidTitles`.
-4. El primer título que supere la comprobación se aplica (se actualiza el `<h1>` en el cuerpo).
-5. Si ningún intento produce un título único, se lanza una excepción.
-
-> La deduplicación de fases se omite por completo cuando se proporciona un `title` explícito en el `ArticleRequest`.
-
----
-
-## Ejemplo de uso end-to-end — Artículos
-
-### Request
+**Sample curl call:**
 
 ```bash
-curl -X POST 'http://localhost:8080/api/articles/generate' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "category": "Spring Boot",
-    "subcategory": "Spring Security",
-    "tag": "JWT Authentication",
-    "language": "es",
-    "site": "https://mi-blog.com",
-    "authorUsername": "juan",
-    "avoidTitles": [
-      "Introducción a JWT",
-      "JWT para principiantes"
-    ]
-  }'
+curl -X POST http://localhost:8080/api/preguntas/generate
 ```
 
-### Respuesta (recortada)
-
-```json
-{
-  "title": "Autenticación JWT en Spring Boot 3: guía práctica",
-  "slug": "autenticacion-jwt-en-spring-boot-3-guia-practica",
-  "summary": "Aprende a implementar JWT en Spring Boot 3 con buenas prácticas.",
-  "body": "<h1>Autenticación JWT en Spring Boot 3: guía práctica</h1>...",
-  "category": "Spring Security",
-  "tags": ["JWT Authentication"],
-  "author": "juan",
-  "status": "published",
-  "isVisible": true,
-  "keywords": ["jwt spring boot", "spring security", "token"],
-  "metaTitle": "Autenticación JWT en Spring Boot 3: guía práctica",
-  "metaDescription": "Aprende a implementar JWT en Spring Boot 3 con buenas prácticas.",
-  "canonicalUrl": "https://mi-blog.com/post/autenticacion-jwt-en-spring-boot-3-guia-practica",
-  "structuredData": {
-    "@context": "https://schema.org",
-    "@type": "TechArticle",
-    "headline": "Autenticación JWT en Spring Boot 3: guía práctica",
-    "description": "Aprende a implementar JWT en Spring Boot 3 con buenas prácticas.",
-    "author": { "@type": "Person", "name": "juan" },
-    "url": "https://mi-blog.com/post/autenticacion-jwt-en-spring-boot-3-guia-practica"
-  },
-  "ogTitle": "Autenticación JWT en Spring Boot 3: guía práctica",
-  "ogDescription": "Aprende a implementar JWT en Spring Boot 3 con buenas prácticas.",
-  "ogType": "article",
-  "wordCount": 1300,
-  "readingTime": 7,
-  "publishDate": "2026-03-24T14:00:00Z",
-  "createdAt": "2026-03-24T14:00:00Z",
-  "updatedAt": "2026-03-24T14:00:00Z",
-  "generatedAt": "2026-03-24T14:00:00Z"
-}
-```
-
----
-
-## Ejemplo de uso end-to-end — Preguntas
-
-### Request
-
-```bash
-curl -X POST 'http://localhost:8080/api/preguntas/generate'
-```
-
-### Respuesta
+**Sample response:**
 
 ```json
 {
@@ -589,78 +431,167 @@ curl -X POST 'http://localhost:8080/api/preguntas/generate'
     "es": "¿Vives de alquiler?",
     "fr": "Vivez-vous en location?"
   },
-  "actualizadaEn": "2026-04-27T22:42:43.572793+00:00"
+  "actualizadaEn": "2026-04-28T10:00:00+00:00"
 }
 ```
 
 ---
 
-## Modelo de entrada `ArticleRequest`
+## Properties reference
 
-| Campo | Tipo | Obligatorio | Descripción |
-|-------|------|-------------|-------------|
-| `category` | `String` | ✅ Sí | Categoría del artículo |
-| `subcategory` | `String` | No | Subcategoría (defecto: `"General"`) |
-| `tag` | `String` | No | Etiqueta / tema del artículo |
-| `title` | `String` | No | Título exacto a utilizar; si se proporciona, la IA genera el cuerpo alrededor de este título y se omite la deduplicación |
-| `authorUsername` | `String` | No | Sobreescribe `article-generator.author-username` para esta petición |
-| `site` | `String` | No | Sobreescribe `article-generator.site` para esta petición |
-| `language` | `String` | No | Código ISO 639-1 (p.e. `es`, `en`); sobreescribe `article-generator.language` |
-| `avoidTitles` | `List<String>` | No | Títulos a evitar en la deduplicación (solo se aplica cuando no se especifica `title`) |
+All properties use the prefix `article-generator`.
+
+### AI provider
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `provider` | `AUTO` \| `OPENAI` \| `GEMINI` \| `OLLAMA` \| `ANTHROPIC` | `AUTO` | Active AI provider |
+| `model` | `String` | `gpt-4o` | Model name |
+| `openai-api-key` | `String` | — | OpenAI API key |
+| `gemini-api-key` | `String` | — | Google Gemini API key |
+| `ollama-base-url` | `String` | — | Ollama base URL (e.g. `http://localhost:11434`) |
+
+### Article defaults
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `site` | `String` | `""` | Base URL for canonical links |
+| `author-username` | `String` | `adminUser` | Default author |
+| `language` | `String` | `es` | Default language (ISO 639-1) |
+| `output-dir` | `String` | — | Directory to write `<slug>.json` files; unset = no disk write |
+
+### AI generation parameters
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `temperature-article` | `double` | `0.7` | Temperature for article body (0.0–1.0) |
+| `temperature-title` | `double` | `0.9` | Temperature for title-only regeneration (0.0–1.0) |
+| `max-article-tokens` | `int` | `8096` | Max output tokens for full article |
+| `max-title-tokens` | `int` | `100` | Max output tokens for title-only |
+
+### Deduplication & retries
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `similarity-threshold` | `double` | `0.86` | LCS similarity above which a title is a duplicate |
+| `max-title-retries` | `int` | `5` | Max attempts to regenerate a unique title (Phase 2) |
+| `max-api-retries` | `int` | `3` | Max retries for transient AI API errors |
+| `retry-base-delay-seconds` | `int` | `2` | Base delay (seconds) for exponential back-off |
+
+### SEO metadata limits
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `meta-title-max-length` | `int` | `60` | Max length of `metaTitle` |
+| `meta-description-max-length` | `int` | `160` | Max length of `metaDescription` |
+| `max-avoid-titles-in-prompt` | `int` | `5` | Max avoid-titles sent to the AI in one prompt |
+
+### Custom system messages
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `generation-system-msg` | `String` | Overrides the built-in system message for article generation |
+| `title-system-msg` | `String` | Overrides the built-in system message for title-only generation |
+
+### Custom prompt templates
+
+| Property | Placeholders | Description |
+|----------|--------------|-------------|
+| `generation-prompt-template` | `{lang}`, `{topic}`, `{parentName}`, `{subcatName}`, `{titleInstruction}`, `{avoidBlock}` | Full article prompt |
+| `title-prompt-template` | `{lang}`, `{topic}`, `{parentName}`, `{subcatName}`, `{maxLen}`, `{avoidBlock}` | Title-only prompt |
 
 ---
 
-## Modelo de respuesta `Article`
+## Article model reference
 
-| Campo | Tipo | Descripción |
+`io.github.aigen.article.domain.Article`
+
+| Field | Type | Description |
 |-------|------|-------------|
-| `title` | `String` | Título del artículo (optimizado para SEO) |
-| `slug` | `String` | Slug URL-safe derivado del título |
-| `summary` | `String` | Resumen/meta-descripción (≤ 160 caracteres recomendado) |
-| `body` | `String` | Cuerpo completo del artículo en HTML semántico |
-| `category` | `String` | Subcategoría del artículo |
-| `tags` | `List<String>` | Etiquetas del artículo |
-| `author` | `String` | Nombre de usuario del autor |
-| `status` | `String` | Estado de publicación (siempre `"published"`) |
-| `isVisible` | `boolean` | Visibilidad pública (siempre `true`) |
-| `keywords` | `List<String>` | Palabras clave SEO de cola larga |
-| `metaTitle` | `String` | Título para `<title>` (truncado a `meta-title-max-length`) |
-| `metaDescription` | `String` | Meta-descripción (truncada a `meta-description-max-length`) |
-| `canonicalUrl` | `String` | URL canónica: `{site}/post/{slug}` |
-| `structuredData` | `Map<String, Object>` | Schema.org `TechArticle` JSON-LD para `<script type="application/ld+json">` |
-| `ogTitle` | `String` | Título Open Graph |
-| `ogDescription` | `String` | Descripción Open Graph |
-| `ogType` | `String` | Tipo Open Graph (siempre `"article"`) |
-| `wordCount` | `int` | Recuento aproximado de palabras del cuerpo |
-| `readingTime` | `int` | Tiempo estimado de lectura en minutos |
-| `publishDate` | `String` | Fecha de publicación ISO 8601 UTC |
-| `createdAt` | `String` | Timestamp de creación ISO 8601 UTC |
-| `updatedAt` | `String` | Timestamp de última modificación ISO 8601 UTC |
-| `generatedAt` | `String` | Timestamp de generación ISO 8601 UTC |
+| `title` | `String` | SEO-optimised article title |
+| `slug` | `String` | URL-safe slug derived from the title |
+| `summary` | `String` | Meta-description (≤ 160 chars recommended) |
+| `body` | `String` | Full article body as semantic HTML |
+| `category` | `String` | Sub-category name |
+| `tags` | `List<String>` | Topic tags |
+| `author` | `String` | Author username |
+| `status` | `String` | Always `"published"` |
+| `isVisible` | `boolean` | Always `true` |
+| `keywords` | `List<String>` | Long-tail SEO keywords |
+| `metaTitle` | `String` | Truncated title for `<title>` tag |
+| `metaDescription` | `String` | Truncated summary for meta-description |
+| `canonicalUrl` | `String` | `{site}/post/{slug}` |
+| `structuredData` | `Map<String, Object>` | Schema.org `TechArticle` JSON-LD |
+| `ogTitle` | `String` | Open Graph title |
+| `ogDescription` | `String` | Open Graph description |
+| `ogType` | `String` | Always `"article"` |
+| `wordCount` | `int` | Approximate word count |
+| `readingTime` | `int` | Estimated reading time in minutes |
+| `publishDate` | `String` | ISO 8601 UTC |
+| `createdAt` | `String` | ISO 8601 UTC |
+| `updatedAt` | `String` | ISO 8601 UTC |
+| `generatedAt` | `String` | ISO 8601 UTC |
 
 ---
 
-## Modelo de entidad `Pregunta`
+## ArticleRequest reference
 
-Entidad JPA mapeada a la tabla PostgreSQL `preguntas`.
+`io.github.aigen.article.domain.ArticleRequest`
 
-| Campo | Tipo Java | Columna PostgreSQL | Descripción |
-|-------|-----------|--------------------|-------------|
-| `id` | `UUID` | `UUID PRIMARY KEY DEFAULT gen_random_uuid()` | Identificador único generado por la base de datos |
-| `campo` | `String` | `VARCHAR(255) NOT NULL` | Identificador camelCase del campo (p.e. `viviendaAlquiler`) |
-| `orden` | `Integer` | `INTEGER NOT NULL` | Posición de visualización en el cuestionario (1-based) |
-| `texto` | `Map<String, String>` | `JSONB NOT NULL` | Texto de la pregunta en cuatro idiomas: `ca`, `en`, `es`, `fr` |
-| `actualizadaEn` | `OffsetDateTime` | `TIMESTAMPTZ NOT NULL DEFAULT now()` | Timestamp de la última actualización |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `category` | `String` | ✅ | Article category |
+| `subcategory` | `String` | No | Sub-category (default: `"General"`) |
+| `tag` | `String` | No | Topic / tag |
+| `title` | `String` | No | Forces an exact title; the AI generates the body around it and deduplication is skipped |
+| `authorUsername` | `String` | No | Overrides `article-generator.author-username` for this request |
+| `site` | `String` | No | Overrides `article-generator.site` for this request |
+| `language` | `String` | No | ISO 639-1 code; overrides `article-generator.language` |
+| `avoidTitles` | `List<String>` | No | Titles the AI must not reproduce (used in deduplication) |
 
 ---
 
-## Notas rápidas
+## Pregunta model reference
 
-- Campo obligatorio en `ArticleRequest`: `category`.
-- Si no envías `subcategory`, usa `General`.
-- Si no envías `language`, `site` o `authorUsername`, se aplican los valores de `application.yml`.
-- Si envías `title`, la IA genera el cuerpo del artículo alrededor de ese título exacto (se omite la deduplicación de fases).
-- El starter aplica deduplicación de títulos usando `avoidTitles` (solo cuando no se especifica `title`).
-- `PreguntaGeneratorService` solo se registra cuando `spring-boot-starter-data-jpa` y una `DataSource` PostgreSQL están configurados.
-- `PreguntaGeneratorService.generateAndSave()` deduplica automáticamente: comprueba el identificador `campo` y el texto en español antes de persistir.
-- Todos los beans son `@ConditionalOnMissingBean`: el proyecto consumidor puede sobreescribir cualquiera.
+`io.github.aigen.pregunta.domain.Pregunta` — JPA entity mapped to the `preguntas` table.
+
+| Field | Java type | PostgreSQL column | Description |
+|-------|-----------|-------------------|-------------|
+| `id` | `UUID` | `UUID PRIMARY KEY DEFAULT gen_random_uuid()` | Database-assigned identifier |
+| `campo` | `String` | `VARCHAR(255) NOT NULL` | camelCase field identifier (e.g. `viviendaAlquiler`) |
+| `orden` | `Integer` | `INTEGER NOT NULL` | Display order (1-based) |
+| `texto` | `Map<String, String>` | `JSONB NOT NULL` | Question text per locale: `ca`, `en`, `es`, `fr` |
+| `actualizadaEn` | `OffsetDateTime` | `TIMESTAMPTZ NOT NULL DEFAULT now()` | Last-updated timestamp |
+
+---
+
+## Title deduplication algorithm
+
+When `avoidTitles` is non-empty (and no explicit `title` is provided) the starter uses a two-phase approach:
+
+**Phase 1 — Full article generation**
+
+1. The AI generates the complete article (title + summary + HTML body + keywords).
+2. The generated title is compared against every entry in `avoidTitles` using the LCS similarity metric: `2 × LCS / (|a| + |b|)` (equivalent to Python's `SequenceMatcher.ratio()`).
+3. If all similarities are below `similarity-threshold` (default `0.86`) → article accepted, done.
+4. If the title is too similar to an existing one → Phase 2.
+
+**Phase 2 — Title-only regeneration**
+
+1. The HTML body from Phase 1 is kept as-is.
+2. The AI is asked to produce only a new title (up to `max-title-retries` attempts).
+3. Each candidate is checked against `avoidTitles`.
+4. The first title that passes is applied (the `<h1>` in the body is updated accordingly).
+5. If no attempt produces a unique title an exception is thrown.
+
+---
+
+## Quick notes
+
+- `category` is the only mandatory field in `ArticleRequest`.
+- If `subcategory` is omitted, `"General"` is used.
+- If `language`, `site`, or `authorUsername` are omitted in the request, the values from `application.yml` are used.
+- If `title` is provided the AI generates the body around that exact title and deduplication is skipped entirely.
+- `PreguntaGeneratorService` is only registered when `spring-boot-starter-data-jpa` and a PostgreSQL `DataSource` are on the classpath.
+- `PreguntaGeneratorService.generateAndSave()` deduplicates automatically: it checks both the `campo` identifier and the Spanish text before persisting.
+- All beans are `@ConditionalOnMissingBean` — you can override any bean in your consuming application.
