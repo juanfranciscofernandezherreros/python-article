@@ -1,6 +1,8 @@
 package com.github.juanfernandez.article.shared.config;
 
+import com.github.juanfernandez.article.shared.ai.AiConfig;
 import com.github.juanfernandez.article.shared.ai.AiProvider;
+import com.github.juanfernandez.article.shared.ai.RetryConfig;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -30,7 +32,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * </pre>
  */
 @ConfigurationProperties(prefix = "article-generator")
-public class ArticleGeneratorProperties {
+public class ArticleGeneratorProperties implements AiConfig, RetryConfig {
 
     // ── AI provider selection ─────────────────────────────────────────────
 
@@ -72,6 +74,13 @@ public class ArticleGeneratorProperties {
 
     /** Default article language (ISO 639-1 code). Default: {@code es}. */
     private String language = "es";
+
+    /**
+     * Optional directory where generated articles are persisted as {@code <slug>.json}.
+     * When unset (default) generated articles are returned to the caller but not written
+     * to disk.
+     */
+    private String outputDir;
 
     // ── AI generation parameters ──────────────────────────────────────────
 
@@ -188,6 +197,9 @@ public class ArticleGeneratorProperties {
 
     public String getLanguage() { return language; }
     public void setLanguage(String language) { this.language = language; }
+
+    public String getOutputDir() { return outputDir; }
+    public void setOutputDir(String outputDir) { this.outputDir = outputDir; }
 
     public double getTemperatureArticle() { return temperatureArticle; }
     public void setTemperatureArticle(double temperatureArticle) { this.temperatureArticle = temperatureArticle; }

@@ -4,17 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.github.juanfernandez.article.article.domain.Article;
 import com.github.juanfernandez.article.article.domain.ArticleRequest;
 import com.github.juanfernandez.article.article.port.in.ArticleGeneratorPort;
+import com.github.juanfernandez.article.article.port.out.ArticleRepositoryPort;
 import com.github.juanfernandez.article.shared.ai.port.AiPort;
 import com.github.juanfernandez.article.shared.config.ArticleGeneratorProperties;
 import com.github.juanfernandez.article.shared.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Random;
 
 /**
  * Application service that implements the {@link ArticleGeneratorPort} use case.
@@ -43,28 +41,30 @@ import java.util.Random;
 public class ArticleGeneratorService implements ArticleGeneratorPort {
 
     private static final Logger log = LoggerFactory.getLogger(ArticleGeneratorService.class);
-    private static final Random RANDOM = new Random();
 
     private final ArticleGeneratorProperties properties;
     private final AiPort aiPort;
     private final PromptBuilderService promptBuilder;
-    private final SeoService seoService;
     private final TextUtils textUtils;
     private final JsonUtils jsonUtils;
+    private final ArticleAssembler assembler;
+    private final ArticleRepositoryPort repository;
 
     public ArticleGeneratorService(
             ArticleGeneratorProperties properties,
             AiPort aiPort,
             PromptBuilderService promptBuilder,
-            SeoService seoService,
             TextUtils textUtils,
-            JsonUtils jsonUtils) {
-        this.properties = properties;
-        this.aiPort = aiPort;
+            JsonUtils jsonUtils,
+            ArticleAssembler assembler,
+            ArticleRepositoryPort repository) {
+        this.properties   = properties;
+        this.aiPort       = aiPort;
         this.promptBuilder = promptBuilder;
-        this.seoService = seoService;
-        this.textUtils = textUtils;
-        this.jsonUtils = jsonUtils;
+        this.textUtils    = textUtils;
+        this.jsonUtils    = jsonUtils;
+        this.assembler    = assembler;
+        this.repository   = repository;
     }
 
     // ── ArticleGeneratorPort implementation ───────────────────────────────
@@ -137,8 +137,12 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
             }
         }
 
-        return assembleArticle(title, summary, body, keywords, category, subcategory, tag,
-                author, site, language);
+        Article article = assembler.assemble(title, summary, body, keywords,
+                category, subcategory, tag, author, site, language);
+        log.info("Article generated: title='{}', slug='{}', words={}, readingTime={}min",
+                article.getTitle(), article.getSlug(),
+                article.getWordCount(), article.getReadingTime());
+        return repository.save(article);
     }
 
     // ── Content generation helpers ────────────────────────────────────────
@@ -150,14 +154,14 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         String prompt = promptBuilder.buildGenerationPrompt(
                 category, subcategory, tag, title, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiPort.generate(
+        String rawText = aiPort.generate(
                 promptBuilder.getGenerationSystemMsg(),
                 prompt,
                 properties.getMaxArticleTokens(),
-                properties.getTemperatureArticle()));
+                properties.getTemperatureArticle());
 
-        String jsonBlock = extractJsonBlock(rawText);
-        JsonNode data    = safeJsonParse(jsonBlock);
+        String jsonBlock = jsonUtils.extractJsonBlock(rawText);
+        JsonNode data    = jsonUtils.safeJsonParse(jsonBlock);
 
         String parsedTitle   = textNode(data, "title");
         String parsedSummary = textNode(data, "summary");
@@ -182,120 +186,17 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         String prompt = promptBuilder.buildTitlePrompt(
                 category, subcategory, tag, avoidTitles, language);
 
-        String rawText = withRetry(() -> aiPort.generate(
+        String rawText = aiPort.generate(
                 promptBuilder.getTitleSystemMsg(),
                 prompt,
                 properties.getMaxTitleTokens(),
-                properties.getTemperatureTitle()));
+                properties.getTemperatureTitle());
 
         return rawText.strip()
                 .replaceAll("^[\"']|[\"']$", "")
                 .strip();
     }
 
-    // ── Article assembly ──────────────────────────────────────────────────
-
-    private Article assembleArticle(
-            String title, String summary, String body, List<String> keywords,
-            String category, String subcategory, String tag,
-            String author, String site, String language) {
-
-        String nowIso = Instant.now().toString();
-        String slug = textUtils.slugify(title);
-        int wordCount   = textUtils.countWords(body);
-        int readingTime = textUtils.estimateReadingTime(body);
-
-        String metaTitle = truncate(title,   properties.getMetaTitleMaxLength());
-        String metaDesc  = truncate(summary, properties.getMetaDescriptionMaxLength());
-        String canonical = seoService.buildCanonicalUrl(site, slug);
-
-        List<String> tagNames = (tag != null && !tag.isBlank()) ? List.of(tag) : List.of();
-
-        Map<String, Object> structuredData = seoService.buildJsonLdStructuredData(
-                title, summary, canonical, keywords,
-                author, nowIso, nowIso,
-                wordCount, readingTime,
-                subcategory, tagNames, site, language);
-
-        Article article = new Article();
-        article.setTitle(title);
-        article.setSlug(slug);
-        article.setSummary(summary);
-        article.setBody(body);
-        article.setCategory(subcategory);
-        article.setTags(tagNames);
-        article.setAuthor(author);
-        article.setStatus("published");
-        article.setVisible(true);
-        article.setKeywords(keywords);
-        article.setMetaTitle(metaTitle);
-        article.setMetaDescription(metaDesc);
-        article.setCanonicalUrl(canonical);
-        article.setStructuredData(structuredData);
-        article.setOgTitle(metaTitle);
-        article.setOgDescription(metaDesc);
-        article.setOgType("article");
-        article.setWordCount(wordCount);
-        article.setReadingTime(readingTime);
-        article.setPublishDate(nowIso);
-        article.setCreatedAt(nowIso);
-        article.setUpdatedAt(nowIso);
-        article.setGeneratedAt(nowIso);
-
-        log.info("Article generated: title='{}', slug='{}', words={}, readingTime={}min",
-                title, slug, wordCount, readingTime);
-
-        return article;
-    }
-
-    // ── Retry with exponential back-off ───────────────────────────────────
-
-    private <T> T withRetry(ThrowingSupplier<T> fn) {
-        int maxRetries = properties.getMaxApiRetries();
-        int baseDelay  = properties.getRetryBaseDelaySeconds();
-        Exception lastException = null;
-
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return fn.get();
-            } catch (RuntimeException e) {
-                if (isTransientError(e)) {
-                    lastException = e;
-                    double wait = baseDelay * Math.pow(2, attempt - 1) + RANDOM.nextDouble();
-                    log.warn("Transient error on attempt {}/{}: {}. Retrying in {}s.",
-                            attempt, maxRetries, e.getMessage(), String.format("%.1f", wait));
-                    try { Thread.sleep((long) (wait * 1000)); } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during retry wait", ie);
-                    }
-                } else {
-                    throw e;
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("Unexpected error calling AI API", e);
-            }
-        }
-        throw new RuntimeException("AI API failed after " + maxRetries + " retries", lastException);
-    }
-
-    private boolean isTransientError(RuntimeException e) {
-        Throwable cause = e.getCause() != null ? e.getCause() : e;
-        String msg = cause.getClass().getName() + " " + (cause.getMessage() != null ? cause.getMessage() : "");
-        return msg.contains("ConnectException")
-                || msg.contains("SocketTimeoutException")
-                || msg.contains("ConnectionRefused")
-                || msg.contains("UnknownHostException");
-    }
-
-    // ── JSON helpers ──────────────────────────────────────────────────────
-
-    private String extractJsonBlock(String text) {
-        return jsonUtils.extractJsonBlock(text);
-    }
-
-    private JsonNode safeJsonParse(String json) {
-        return jsonUtils.safeJsonParse(json);
-    }
 
     // ── Utility ───────────────────────────────────────────────────────────
 
@@ -322,17 +223,7 @@ public class ArticleGeneratorService implements ArticleGeneratorPort {
         return list;
     }
 
-    private static String truncate(String s, int maxLen) {
-        if (s == null) return "";
-        return s.length() > maxLen ? s.substring(0, maxLen).stripTrailing() : s;
-    }
-
     // ── Inner types ───────────────────────────────────────────────────────
 
     private record ArticleContent(String title, String summary, String body, List<String> keywords) {}
-
-    @FunctionalInterface
-    private interface ThrowingSupplier<T> {
-        T get() throws Exception;
-    }
 }
